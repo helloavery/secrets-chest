@@ -1,19 +1,16 @@
 package com.averygrimes.secretschest.external;
 
-import com.amazonaws.auth.AWSCredentialsProvider;
-import com.amazonaws.auth.profile.ProfileCredentialsProvider;
-import com.amazonaws.regions.Regions;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.amazonaws.services.s3.model.S3Object;
 import com.averygrimes.secretschest.exceptions.AWSOperationException;
-import org.apache.commons.io.IOUtils;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.core.sync.ResponseTransformer;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import javax.annotation.PostConstruct;
-import java.nio.charset.StandardCharsets;
 
 /**
  * @author Avery Grimes-Farrow
@@ -22,22 +19,25 @@ import java.nio.charset.StandardCharsets;
  */
 
 @Service
+@Slf4j
 public class AWSServiceImpl implements AWSService{
 
-    private static final Logger LOGGER = LogManager.getLogger(AWSServiceImpl.class);
-
-    private AmazonS3 amazonS3;
+    private S3Client amazonS3Client;
 
     @PostConstruct
     public void init(){
-        this.amazonS3 = AmazonS3ClientBuilder.standard().withRegion(Regions.US_EAST_2).withCredentials(iamCredentialsSetup()).build();
+        this.amazonS3Client = S3Client.builder().region(Region.US_EAST_2).build();
     }
 
     @Override
     public void sendUploadBucketObjectRequest(String bucket, String bucketObjectReference, String dataToUpload, String requestId) {
         try{
-            LOGGER.info("Uploading data to bucket {} for requestId {}", bucket, requestId);
-            amazonS3.putObject(bucket,bucketObjectReference, dataToUpload);
+            PutObjectRequest objectRequest = PutObjectRequest.builder()
+                            .bucket(bucket)
+                            .key(bucketObjectReference)
+                            .build();
+            log.info("Uploading data to bucket {} for requestId {}", bucket, requestId);
+            amazonS3Client.putObject(objectRequest, RequestBody.fromBytes(dataToUpload.getBytes()));
         }
         catch(Exception e){
             throw new AWSOperationException("Error uploading object to bucket " + bucket + " for request id " + requestId, e);
@@ -47,24 +47,16 @@ public class AWSServiceImpl implements AWSService{
     @Override
     public Object sendRetrieveBucketObjectResponse(String bucket, String secretReference, String requestId, boolean returnAsString) {
         try{
-            LOGGER.info("Retrieving data from bucket {} for requestId {}", bucket, requestId);
-            S3Object s3Object = amazonS3.getObject(bucket, secretReference);
-            validateS3Response(s3Object);
-            return returnAsString ? IOUtils.toString(s3Object.getObjectContent().getDelegateStream(), StandardCharsets.UTF_8) : s3Object;
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(secretReference)
+                    .build();
+            log.info("Retrieving data from bucket {} for requestId {}", bucket, requestId);
+            return returnAsString ? amazonS3Client.getObject(getObjectRequest, ResponseTransformer.toBytes()).asUtf8String()
+                    : amazonS3Client.getObject(getObjectRequest, ResponseTransformer.toBytes());
         }
         catch(Exception e){
-            throw new AWSOperationException("Error uploading object to bucket " + bucket + " for request id " + requestId, e);
+            throw new AWSOperationException("Error retrieving object from bucket " + bucket + " for request id " + requestId, e);
         }
-    }
-
-    private void validateS3Response(S3Object s3Object){
-        if(s3Object == null){
-            throw new AWSOperationException("Error calling AWS S3 in order to retrieve/upload secrets, response came back null");
-        }
-    }
-
-    private AWSCredentialsProvider iamCredentialsSetup(){
-        LOGGER.info("Retrieving IAM credentials");
-        return new ProfileCredentialsProvider("default");
     }
 }

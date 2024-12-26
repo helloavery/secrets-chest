@@ -1,9 +1,7 @@
 package com.averygrimes.secretschest;
 
-import com.averygrimes.secretschest.interaction.AWSClient;
-import org.junit.Before;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.MockitoAnnotations;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
@@ -15,10 +13,7 @@ import org.springframework.test.context.ActiveProfiles;
 @ActiveProfiles("test")
 public class BaseTestConfig {
 
-    @MockBean
-    private AWSClient awsClient;
-
-    @Before
+    @BeforeEach
     public void setUp(){
         MockitoAnnotations.initMocks(this);
     }

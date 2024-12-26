@@ -6,12 +6,12 @@ package com.averygrimes.secretschest.service;
  * https://github.com/helloavery
  */
 
-import com.averygrimes.secretschest.config.ProgramArguments;
 import com.averygrimes.secretschest.exceptions.SecretsChestCryptoException;
 import com.averygrimes.secretschest.pojo.SecretsChestConstants;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -29,26 +29,25 @@ import javax.annotation.PostConstruct;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
-import javax.inject.Inject;
 import java.nio.ByteBuffer;
 import java.security.Security;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
+@Slf4j
 public class CryptoServiceImpl implements CryptoService{
 
-    private static final Logger LOGGER = LogManager.getLogger(CryptoServiceImpl.class);
-
-    private ProgramArguments programArguments;
+    private Environment environment;
     private KmsClient kmsClient;
     private Cipher cipher;
     private static final String AES = "AES";
     private static final String AES_256 = "AES_256";
+    private static String KMS_KEY_ARN;
 
-    @Inject
-    public void setProgramArguments(ProgramArguments programArguments) {
-        this.programArguments = programArguments;
+    @Autowired
+    public void setEnvironment(Environment environment) {
+        this.environment = environment;
     }
 
     @PostConstruct
@@ -56,9 +55,10 @@ public class CryptoServiceImpl implements CryptoService{
         try{
             Security.addProvider(new BouncyCastleProvider());
             this.kmsClient = KmsClient.builder().region(Region.US_EAST_2).credentialsProvider(awsCredentialsProviderSetup()).build();
+            KMS_KEY_ARN = environment.getProperty("kmsKeyARN");
         }
         catch(Exception e){
-            LOGGER.error("Error setting up and initializing service", e);
+            log.error("Error setting up and initializing service", e);
             throw new SecretsChestCryptoException("Error setting up and initializing service", e);
         }
     }
@@ -78,7 +78,7 @@ public class CryptoServiceImpl implements CryptoService{
             return encryptedDataAndKey;
         }
         catch(Exception e){
-            LOGGER.error("Error encrypting secrets to be uploaded", e);
+            log.error("Error encrypting secrets to be uploaded", e);
             throw new SecretsChestCryptoException("Error encrypting secrets to be uploaded", e);
         }
     }
@@ -91,7 +91,7 @@ public class CryptoServiceImpl implements CryptoService{
             return encryptData(dataToUpload, plaintextSecretKey);
         }
         catch(Exception e){
-            LOGGER.error("Error encrypting secrets to be uploaded", e);
+            log.error("Error encrypting secrets to be uploaded", e);
             throw new SecretsChestCryptoException("Error encrypting secrets to be uploaded", e);
         }
     }
@@ -104,20 +104,19 @@ public class CryptoServiceImpl implements CryptoService{
             return decryptData(encryptedData, plaintextSecretKey);
         }
         catch(Exception e){
-            LOGGER.error("Error decrypting secrets", e);
+            log.error("Error decrypting secrets", e);
             throw new SecretsChestCryptoException("Error decrypting secrets: " + e.getMessage());
         }
     }
 
     private AwsCredentialsProvider awsCredentialsProviderSetup(){
-        LOGGER.info("Retrieving IAM credentials");
+        log.info("Retrieving IAM credentials");
         AwsCredentials credentials = ProfileCredentialsProvider.create("kmsUser").resolveCredentials();
         return StaticCredentialsProvider.create(credentials);
     }
 
     private GenerateDataKeyResponse generateDataKey(){
-        String keyId = programArguments.getKmsKeyARN();
-        GenerateDataKeyRequest dataKeyRequest = GenerateDataKeyRequest.builder().keyId(keyId).keySpec(AES_256).build();
+        GenerateDataKeyRequest dataKeyRequest = GenerateDataKeyRequest.builder().keyId(KMS_KEY_ARN).keySpec(AES_256).build();
         return kmsClient.generateDataKey(dataKeyRequest);
     }
 
@@ -133,25 +132,25 @@ public class CryptoServiceImpl implements CryptoService{
 
     private byte[] encryptData(byte[] dataToEncrypt, SecretKey secretKey) {
         try {
-            LOGGER.info("Encrypting retrieved secrets");
+            log.info("Encrypting retrieved secrets");
             cipher = Cipher.getInstance(AES);
             cipher.init(Cipher.ENCRYPT_MODE, secretKey);
             return cipher.doFinal(dataToEncrypt);
         } catch (Exception e) {
-            LOGGER.error("Error encrypting retrieved secrets", e);
+            log.error("Error encrypting retrieved secrets", e);
             throw new SecretsChestCryptoException("Error encrypted retrieved secrets", e);
         }
     }
 
     private byte[] decryptData(byte[] encryptedData, SecretKey secretKey){
         try{
-            LOGGER.info("decrypting secrets");
+            log.info("decrypting secrets");
             cipher = Cipher.getInstance(AES);
             cipher.init(Cipher.DECRYPT_MODE, secretKey);
             return cipher.doFinal(encryptedData);
         }
         catch(Exception e){
-            LOGGER.error("Error decrypting secrets", e);
+            log.error("Error decrypting secrets", e);
             throw new SecretsChestCryptoException("Error decrypting retrieved secrets: " + e.getMessage());
         }
     }

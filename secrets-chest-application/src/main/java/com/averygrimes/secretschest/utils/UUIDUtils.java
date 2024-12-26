@@ -1,9 +1,8 @@
 package com.averygrimes.secretschest.utils;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -15,9 +14,8 @@ import java.util.UUID;
  * https://github.com/helloavery
  */
 
+@Slf4j
 public class UUIDUtils {
-
-    private static final Logger LOGGER = LogManager.getLogger(UUIDUtils.class);
 
     public static String generateUUID() {
         try {
@@ -25,7 +23,7 @@ public class UUIDUtils {
             salt.update(UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8));
             return Hex.encodeHexString(salt.digest());
         } catch (Exception e) {
-            LOGGER.error("Error generating new UUID", e);
+            log.error("Error generating new UUID", e);
             throw new RuntimeException("Error generating new UUID", e);
         }
     }

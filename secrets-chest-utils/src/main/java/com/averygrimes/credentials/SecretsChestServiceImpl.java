@@ -4,8 +4,7 @@ import com.averygrimes.credentials.interaction.SecretsChestClient;
 import com.averygrimes.credentials.pojo.CredentialsResponse;
 import com.averygrimes.credentials.pojo.TaskType;
 import com.google.common.base.Stopwatch;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import reactor.core.publisher.Mono;
@@ -13,12 +12,7 @@ import reactor.core.publisher.Mono;
 import javax.annotation.PreDestroy;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.function.Function;
 
 /**
@@ -27,9 +21,9 @@ import java.util.function.Function;
  * https://github.com/helloavery
  */
 
-public class SecretsChestServiceImpl implements SecretsChestService {
+@Slf4j
+class SecretsChestServiceImpl implements SecretsChestService {
 
-    private static final Logger LOGGER = LogManager.getLogger(SecretsChestServiceImpl.class);
     private final SecretsChestClient secretsChestClient;
     private final CredentialsUtils credentialsUtils;
     private final ExecutorService executorService;
@@ -41,17 +35,17 @@ public class SecretsChestServiceImpl implements SecretsChestService {
     }
 
     public CredentialsResponse sendSecrets(byte[] dataToUpload){
-        LOGGER.info("Starting Uploading data to Secrets Chest Job");
+        log.info("Starting Uploading data to Secrets Chest Job");
         Stopwatch stopwatch = Stopwatch.createStarted();
         ClientResponse secretsChestUploadResponse = secretsChestClient.uploadSecrets(dataToUpload);
         CredentialsResponse uploadDataResponse = validateResponseAndReturnEntity(secretsChestUploadResponse, CredentialsResponse.class);
         stopwatch.stop();
-        LOGGER.info("Upload data to Secrets Chest complete, time took is {}", stopwatch.toString());
+        log.info("Upload data to Secrets Chest complete, time took is {}", stopwatch.toString());
         return uploadDataResponse;
     }
 
     public CredentialsResponse sendMultipleSecrets(Map<String, byte[]> listOfDataToUpload){
-        LOGGER.info("Starting Uploading multiple data to Secrets Chest Job");
+        log.info("Starting Uploading multiple data to Secrets Chest Job");
         Stopwatch stopwatch = Stopwatch.createStarted();
         CountDownLatch countDownLatch = new CountDownLatch(listOfDataToUpload.size());
         CredentialsResponse credentialsResponse = new CredentialsResponse();
@@ -70,35 +64,35 @@ public class SecretsChestServiceImpl implements SecretsChestService {
             countDownLatch.await();
         }
         catch (InterruptedException e){
-            LOGGER.warn("Thread has been interrupted");
+            log.warn("Thread has been interrupted");
         }
         stopwatch.stop();
-        LOGGER.info("Upload data to Secrets Chest complete, time took is {}", stopwatch.toString());
+        log.info("Upload data to Secrets Chest complete, time took is {}", stopwatch.toString());
         return credentialsResponse;
     }
 
     public CredentialsResponse updateSecrets(byte[] dataToUpload, String keyReference){
-        LOGGER.info("Starting Replacing Secrets Job");
+        log.info("Starting Replacing Secrets Job");
         Stopwatch stopwatch = Stopwatch.createStarted();
         ClientResponse secretsChestReplaceResponse = secretsChestClient.updateSecrets(keyReference, dataToUpload);
         CredentialsResponse uploadDataResponse = validateResponseAndReturnEntity(secretsChestReplaceResponse, CredentialsResponse.class);
         stopwatch.stop();
-        LOGGER.info("Upload data to Secrets Chest complete, time took is {}", stopwatch.toString());
+        log.info("Upload data to Secrets Chest complete, time took is {}", stopwatch.toString());
         return uploadDataResponse;
     }
 
     public CredentialsResponse retrieveSecrets(String keyReference){
-        LOGGER.info("Starting Retrieving Secrets Job");
+        log.info("Starting Retrieving Secrets Job");
         Stopwatch stopwatch = Stopwatch.createStarted();
         ClientResponse secretsChestRetrievalResponse = secretsChestClient.retrieveSecrets(keyReference);
         CredentialsResponse retrieveDataResponse = validateResponseAndReturnEntity(secretsChestRetrievalResponse, CredentialsResponse.class);
         stopwatch.stop();
-        LOGGER.info("Retrieval to fetch data from Secrets Chest complete, time took is {}", stopwatch.toString());
+        log.info("Retrieval to fetch data from Secrets Chest complete, time took is {}", stopwatch.toString());
         return retrieveDataResponse;
     }
 
     public CredentialsResponse retrieveMultipleSecrets(List<String> keyReferences){
-        LOGGER.info("Starting Retrieving multiple data from Secrets Chest Job");
+        log.info("Starting Retrieving multiple data from Secrets Chest Job");
         Stopwatch stopwatch = Stopwatch.createStarted();
         final CountDownLatch countDownLatch = new CountDownLatch(keyReferences.size());
         CredentialsResponse retrieveDataResponse = new CredentialsResponse();
@@ -118,10 +112,10 @@ public class SecretsChestServiceImpl implements SecretsChestService {
             countDownLatch.await();
         }
         catch(InterruptedException e){
-            LOGGER.warn("Thread has been interrupted");
+            log.warn("Thread has been interrupted");
         }
         stopwatch.stop();
-        LOGGER.info("Retrieval to fetch data from Secrets Chest complete, time took is {}", stopwatch.toString());
+        log.info("Retrieval to fetch data from Secrets Chest complete, time took is {}", stopwatch.toString());
         return retrieveDataResponse;
     }
 
@@ -141,7 +135,7 @@ public class SecretsChestServiceImpl implements SecretsChestService {
                 }
             }
             catch(Exception e){
-                LOGGER.error("Error occurred while completing {}", taskType, e);
+                log.error("Error occurred while completing {}", taskType, e);
                 throw new SecretsChestUtilsException("Error occurred while completing " + taskType, e);
             }
             return credentialsResponse;
@@ -152,17 +146,17 @@ public class SecretsChestServiceImpl implements SecretsChestService {
 
     private <T> T validateResponseAndReturnEntity(ClientResponse response, Class<T> entityType){
         if(response == null){
-            LOGGER.error("Secrets Chest response came back as null");
+            log.error("Secrets Chest response came back as null");
             throw new SecretsChestUtilsException("Secrets Chest response came back as null");
         }
         if(response.rawStatusCode() != 200){
-            LOGGER.error("Secrets Chest response came back as non 200");
+            log.error("Secrets Chest response came back as non 200");
             throw new SecretsChestUtilsException("Secrets Chest response came back as non 200");
         }
         Mono<ResponseEntity<T>> responseEntity = response.toEntity(entityType);
         ResponseEntity<T> responseEntityBlock = responseEntity.block();
         if(responseEntityBlock == null){
-            LOGGER.error("Secrets Chest response came back as null");
+            log.error("Secrets Chest response came back as null");
             throw new SecretsChestUtilsException("Secrets Chest response came back as null");
         }
         return responseEntityBlock.getBody();

@@ -6,79 +6,73 @@ package com.averygrimes.secretschest.service;
  * https://github.com/helloavery
  */
 
-import com.averygrimes.secretschest.cache.KeyCache;
-import com.averygrimes.secretschest.config.ProgramArguments;
+import com.averygrimes.secretschest.cache.CacheBase;
 import com.averygrimes.secretschest.exceptions.SecretsChestServerException;
 import com.averygrimes.secretschest.external.AWSService;
 import com.averygrimes.secretschest.pojo.SecretsChestConstants;
 import com.averygrimes.secretschest.pojo.SecretsChestResponse;
 import com.averygrimes.secretschest.utils.SecretsChestCredUtils;
 import com.averygrimes.secretschest.utils.UUIDUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.SdkBytes;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
-import javax.inject.Inject;
 import java.nio.ByteBuffer;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 @Service
+@Slf4j
 public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
 
-    private static final Logger LOGGER = LogManager.getLogger(SecretsChestBaseServiceImpl.class);
-
-    private ProgramArguments programArguments;
+    private Environment environment;
     private CryptoService cryptoService;
-    private KeyCache keyCache;
+    private CacheBase cacheService;
     private ExecutorService executorService;
     private SecretsChestCredUtils chestCredUtils;
     private Lock lock;
     private AWSService awsService;
-    private String AWSS3DataBucket;
-    private String AWSS3KeyBucket;
+    private static String AWS_S3_DATA_BUCKET;
+    private static String AWS_S3_KEY_BUCKET;
 
-    @Inject
-    public void setProgramArguments(ProgramArguments programArguments) {
-        this.programArguments = programArguments;
+    @Autowired
+    public void setEnvironment(Environment environment) {
+        this.environment = environment;
     }
 
-    @Inject
+    @Autowired
     public void setCryptoService(CryptoService cryptoService) {
         this.cryptoService = cryptoService;
     }
 
-    @Inject
-    public void setKeyCache(KeyCache keyCache) {
-        this.keyCache = keyCache;
+    @Autowired
+    public void setCacheService(CacheBase cacheService) {
+        this.cacheService = cacheService;
     }
 
-    @Inject
+    @Autowired
     public void setChestCredUtils(SecretsChestCredUtils chestCredUtils) {
         this.chestCredUtils = chestCredUtils;
     }
 
-    @Inject
+    @Autowired
     public void setAwsService(AWSService awsService) {
         this.awsService = awsService;
     }
 
     @PostConstruct
     public void init(){
-        this.AWSS3DataBucket = programArguments.getAWSS3DataBucket();
-        this.AWSS3KeyBucket = programArguments.getAWSS3KeyBucket();
+        AWS_S3_DATA_BUCKET = environment.getProperty("AWSS3DataBucket");
+        AWS_S3_KEY_BUCKET = environment.getProperty("AWSS3KeyBucket");
         this.executorService = Executors.newFixedThreadPool(100);
         this.lock = new ReentrantLock(true);
     }
@@ -93,15 +87,15 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
                     Map<String, byte[]> encryptedDataMap = cryptoService.generateDataKeyAndEncryptData(dataToUpload);
                     String bucketObjectReference = UUIDUtils.generateRandomId();
                     encryptedDataMap.forEach((mapKey, encryptedData) -> {
-                        String bucket = mapKey.equals(SecretsChestConstants.ENCRYPTED_KEY_MAP_KEY) ? AWSS3KeyBucket : AWSS3DataBucket;
+                        String bucket = mapKey.equals(SecretsChestConstants.ENCRYPTED_KEY_MAP_KEY) ? AWS_S3_KEY_BUCKET : AWS_S3_DATA_BUCKET;
                         CompletableFuture<SecretsChestResponse> completableFuture = sendEncryptedUploadTasks(bucket, encryptedData, bucketObjectReference, requestId);
                         completableFuture.whenComplete((uploadResponse, exception) -> {
                             if (uploadResponse == null || exception != null) {
-                                LOGGER.error("Exception occurred while uploading data to S3 bucket", exception);
+                                log.error("Exception occurred while uploading data to S3 bucket", exception);
                                 throw SecretsChestServerException.buildResponse("Error uploading secrets data for request id: " + requestId);
                             }
                             if (!uploadResponse.isSuccessful()) {
-                                LOGGER.error("Operation uploading data to S3 bucket unsuccessful");
+                                log.error("Operation uploading data to S3 bucket unsuccessful");
                                 throw SecretsChestServerException.buildResponse("Error uploading secrets data for request id: " + requestId);
                             }
                             countDownLatch.countDown();
@@ -110,19 +104,19 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
                     try {
                         countDownLatch.await();
                     } catch (InterruptedException e) {
-                        LOGGER.warn("Thread has been interrupted");
+                        log.warn("Thread has been interrupted");
                     }
                     secretsChestResponse.setSecretReference(bucketObjectReference);
                     secretsChestResponse.setSuccessful(true);
                 } catch (Exception e) {
-                    LOGGER.error("Error uploading new secrets for bucket {} for requestId {}", "dataToUpload", requestId, e);
+                    log.error("Error uploading new secrets for bucket {} for requestId {}", "dataToUpload", requestId, e);
                     throw SecretsChestServerException.buildResponse("Error uploading secrets data for request id: " + requestId);
                 } finally {
                     lock.unlock();
                 }
             }
         } catch (InterruptedException e) {
-            LOGGER.warn("Thread has been interrupted while acquiring lock");
+            log.warn("Thread has been interrupted while acquiring lock");
         }
         return secretsChestResponse;
     }
@@ -132,12 +126,12 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
         SecretsChestResponse secretsChestResponse = new SecretsChestResponse();
         try {
             String bucketObjectReference = UUIDUtils.generateRandomId();
-            awsService.sendUploadBucketObjectRequest(AWSS3DataBucket, bucketObjectReference, dataToUpload, requestId);
+            awsService.sendUploadBucketObjectRequest(AWS_S3_DATA_BUCKET, bucketObjectReference, dataToUpload, requestId);
             secretsChestResponse.setSecretReference(bucketObjectReference);
             secretsChestResponse.setSuccessful(true);
         }
         catch (Exception e) {
-            LOGGER.error("Error uploading new secrets for bucket {} for requestId {}", "dataToUpload", requestId, e);
+            log.error("Error uploading new secrets for bucket {} for requestId {}", "dataToUpload", requestId, e);
             throw SecretsChestServerException.buildResponse("Error uploading secrets data for request id: " + requestId);
         }
         return secretsChestResponse;
@@ -150,12 +144,12 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
             ByteBuffer encryptedKey = attemptToGetKeyFromCacheThenBucket(secretsReference, requestId).asByteBuffer();
             byte[] encryptedData = cryptoService.encryptDataWithoutGeneratingDataKey(dataToUpload, SdkBytes.fromByteBuffer(encryptedKey));
             String hexEncodedEncryptedData = Hex.encodeHexString(encryptedData);
-            awsService.sendUploadBucketObjectRequest(AWSS3DataBucket, secretsReference, hexEncodedEncryptedData, requestId);
+            awsService.sendUploadBucketObjectRequest(AWS_S3_DATA_BUCKET, secretsReference, hexEncodedEncryptedData, requestId);
             secretsChestResponse.setSecretReference(secretsReference);
             secretsChestResponse.setSuccessful(true);
         }
         catch (Exception e) {
-            LOGGER.error("Error updating secrets for bucket {} for requestId {}", "dataToUpload", requestId, e);
+            log.error("Error updating secrets for bucket {} for requestId {}", "dataToUpload", requestId, e);
             throw SecretsChestServerException.buildResponse("Error updating secrets data for request id: " + requestId);
         }
         return secretsChestResponse;
@@ -167,21 +161,21 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
         try {
             if(lock.tryLock(3500, TimeUnit.MILLISECONDS)){
                 try{
-                    String s3ObjectOutput = (String) awsService.sendRetrieveBucketObjectResponse(AWSS3DataBucket, secretReference, requestId, true);
+                    String s3ObjectOutput = (String) awsService.sendRetrieveBucketObjectResponse(AWS_S3_DATA_BUCKET, secretReference, requestId, true);
                     byte[] hexDecodedBucketObject = Hex.decodeHex(s3ObjectOutput);
                     SdkBytes encryptedKey = attemptToGetKeyFromCacheThenBucket(secretReference, requestId);
                     byte[] decryptedData = cryptoService.decryptData(hexDecodedBucketObject, encryptedKey.asByteBuffer());
                     secretsChestResponse.setData(decryptedData);
                     secretsChestResponse.setSuccessful(true);
                 }catch(Exception e){
-                    LOGGER.error("Error fetching secrets for object reference {}", secretReference, e);
+                    log.error("Error fetching secrets for object reference {}", secretReference, e);
                     throw SecretsChestServerException.buildResponse("Error fetching secrets for secret" + secretReference + " requestId: " + requestId);
                 }finally{
                     lock.unlock();
                 }
             }
         } catch(InterruptedException e) {
-            LOGGER.warn("Thread has been interrupted while acquiring lock");
+            log.warn("Thread has been interrupted while acquiring lock");
         }
         return secretsChestResponse;
     }
@@ -194,14 +188,14 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
                 secretsChestResponse = new SecretsChestResponse();
                 String hexEncodedBytes = Hex.encodeHexString(dataToUpload);
                 awsService.sendUploadBucketObjectRequest(bucket, bucketObjectReference, hexEncodedBytes, requestId);
-                if(bucket.equals(AWSS3KeyBucket)){
+                if(bucket.equals(AWS_S3_KEY_BUCKET)){
                     putEncryptedKeyInCache(bucketObjectReference, dataToUpload);
                 }
                 secretsChestResponse.setSuccessful(true);
                 completableFuture.complete(secretsChestResponse);
             }
             catch(Exception e){
-                LOGGER.error("Error completing upload data task", e);
+                log.error("Error completing upload data task", e);
             }
             return secretsChestResponse;
         }, executorService).applyToEither(chestCredUtils.timeoutRetrieveInvocationResponse(completableFuture, 10, TimeUnit.SECONDS), Function.identity());
@@ -210,26 +204,26 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
 
     private void putEncryptedKeyInCache(String bucketObjectReference, byte[] encryptedKey){
         try{
-            keyCache.put(bucketObjectReference, encryptedKey);
+            cacheService.putItemInCache(bucketObjectReference, encryptedKey);
         }
         catch(Exception e){
-            LOGGER.warn("Error putting encrypted key in key cache", e);
+            log.warn("Error putting encrypted key in key cache", e);
         }
     }
 
     private SdkBytes attemptToGetKeyFromCacheThenBucket(String secretReference, String requestId){
-        if(keyCache.get(secretReference) != null){
-            byte[] encryptedKeyByteArray = (byte[]) keyCache.get(secretReference);
+        if(cacheService.getItemFromCache(secretReference) != null){
+            byte[] encryptedKeyByteArray = (byte[]) cacheService.getItemFromCache(secretReference);
             return SdkBytes.fromByteArray(encryptedKeyByteArray);
         }
         else{
             try{
-                String s3ObjectOutput = (String) awsService.sendRetrieveBucketObjectResponse(AWSS3KeyBucket, secretReference, requestId, true);
+                String s3ObjectOutput = (String) awsService.sendRetrieveBucketObjectResponse(AWS_S3_KEY_BUCKET, secretReference, requestId, true);
                 byte[] hexDecodedKey = Hex.decodeHex(s3ObjectOutput);
                 return SdkBytes.fromByteArray(hexDecodedKey);
             }
             catch(DecoderException e){
-                LOGGER.error("Error decoding hex encrypted key for request id {}", requestId, e);
+                log.error("Error decoding hex encrypted key for request id {}", requestId, e);
                 throw SecretsChestServerException.buildResponse("Error decoding hex encrypted key for request id: " + requestId);
             }
         }

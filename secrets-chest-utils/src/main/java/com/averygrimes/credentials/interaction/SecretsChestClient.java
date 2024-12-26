@@ -6,6 +6,7 @@ import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.ClientResponse;
@@ -14,7 +15,6 @@ import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.tcp.TcpClient;
 
-import javax.ws.rs.core.MediaType;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 
 public class SecretsChestClient {
 
-    private WebClient client;
+    private final WebClient client;
 
     public SecretsChestClient(){
         String baseUrl;
@@ -44,19 +44,17 @@ public class SecretsChestClient {
                     connection.addHandlerLast(new WriteTimeoutHandler(10000, TimeUnit.MILLISECONDS));
                 });
 
-        if(client == null){
-            client = WebClient.builder()
-                    .clientConnector(new ReactorClientHttpConnector(HttpClient.from(tcpClient)))
-                    .baseUrl(baseUrl)
-                    .build();
-        }
+        client = WebClient.builder()
+                .clientConnector(new ReactorClientHttpConnector(HttpClient.from(tcpClient)))
+                .baseUrl(baseUrl)
+                .build();
     }
 
     public ClientResponse uploadSecrets(byte[] dataToUpload){
         return client.post()
                 .uri("/uploadSecrets")
-                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM)
-                .accept(org.springframework.http.MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                 .body(BodyInserters.fromPublisher(Mono.just(dataToUpload), byte[].class))
                 .exchange()
                 .block();
@@ -65,8 +63,8 @@ public class SecretsChestClient {
     public ClientResponse updateSecrets(String secretsReference, byte[] data){
         return client.put()
                 .uri("/updateSecrets/" + secretsReference)
-                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM)
-                .accept(org.springframework.http.MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                 .body(BodyInserters.fromPublisher(Mono.just(data), byte[].class))
                 .exchange()
                 .block();
@@ -75,8 +73,8 @@ public class SecretsChestClient {
     public ClientResponse retrieveSecrets(String secretReference){
         return client.post()
                 .uri("/retrieveSecrets/" + secretReference)
-                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON)
-                .accept(org.springframework.http.MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                 .exchange()
                 .block();
     }

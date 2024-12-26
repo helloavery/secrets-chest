@@ -8,3 +8,4 @@ server:
     include-stacktrace: always
 
 server.servlet.context-path: /secrets-chest-service
+server.port: 6570

@@ -2,11 +2,7 @@ package com.averygrimes.credentials;
 
 import com.averygrimes.credentials.pojo.RetrieveDataResponse;
 
-import java.util.concurrent.Callable;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 
 /**
  * @author Avery Grimes-Farrow
@@ -14,7 +10,7 @@ import java.util.concurrent.TimeoutException;
  * https://github.com/helloavery
  */
 
-public class CredentialsUtils {
+class CredentialsUtils {
 
     public <T> CompletableFuture<T> timeoutRetrieveInvocationResponse(CompletableFuture<T> completableFuture,
                                                                                 long timeOutDuration, TimeUnit timeUnit){
