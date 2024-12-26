@@ -1,17 +1,16 @@
 package com.averygrimes.secretschest.interaction;
 
-import com.averygrimes.secretschest.pojo.SecretsChestConstants;
-import com.averygrimes.secretschest.pojo.SecretsChestResponse;
+import com.averygrimes.secretschest.model.SecretsChestConstants;
+import com.averygrimes.secretschest.model.SecretsChestResponse;
 import com.averygrimes.secretschest.service.SecretsChestBaseService;
 import com.averygrimes.secretschest.utils.ResponseBuilder;
 import com.averygrimes.secretschest.utils.UUIDUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import javax.inject.Named;
-import javax.ws.rs.*;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * @author Avery Grimes-Farrow
@@ -19,8 +18,7 @@ import javax.ws.rs.core.Response;
  * https://github.com/helloavery
  */
 
-@Named
-@Path("/secretsChestBase")
+@RestController("/secretsChestBase")
 public class SecretsChestResource {
 
     private SecretsChestBaseService chestBaseService;
@@ -30,21 +28,23 @@ public class SecretsChestResource {
         this.chestBaseService = chestBaseService;
     }
 
-    @POST
-    @Path("/uploadSecrets")
-    @Consumes(MediaType.APPLICATION_OCTET_STREAM)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response uploadSecrets(byte[] dataToUpload){
+    @RequestMapping(
+            method = RequestMethod.POST,
+            value = "/uploadSecrets",
+            consumes = {MediaType.APPLICATION_OCTET_STREAM_VALUE},
+            produces = {MediaType.APPLICATION_JSON_VALUE})
+    public ResponseEntity<Object> uploadSecrets(byte[] dataToUpload){
         String requestId = UUIDUtils.generateRandomId();
         SecretsChestResponse secretsChestResponse = chestBaseService.uploadAsset(dataToUpload, requestId);
-        return ResponseBuilder.createSuccessfulUploadDataResponse(secretsChestResponse);
+        return ResponseBuilder.buildAndReturnResponse(secretsChestResponse);
     }
 
-    @POST
-    @Path("/uploadSecrets/format/{format}")
-    @Consumes(MediaType.TEXT_PLAIN)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response uploadSecrets(@PathParam("format") String format, String dataToUpload){
+    @RequestMapping(
+            method = RequestMethod.POST,
+            value = "/uploadSecrets/format/{format}",
+            consumes = {MediaType.TEXT_PLAIN_VALUE},
+            produces = {MediaType.APPLICATION_JSON_VALUE})
+    public ResponseEntity<Object> uploadSecrets(@RequestParam("format") String format, String dataToUpload){
         String requestId = UUIDUtils.generateRandomId();
         SecretsChestResponse secretsChestResponse = null;
         if(StringUtils.equalsIgnoreCase(format, SecretsChestConstants.PLAIN_TEXT_DATA)){
@@ -52,26 +52,28 @@ public class SecretsChestResource {
         }else{
             secretsChestResponse = chestBaseService.uploadAsset(dataToUpload.getBytes(), requestId);
         }
-        return ResponseBuilder.createSuccessfulUploadDataResponse(secretsChestResponse);
+        return ResponseBuilder.buildAndReturnResponse(secretsChestResponse);
     }
 
-    @PUT
-    @Path("/updateSecrets/{secretsReference}")
-    @Consumes(MediaType.APPLICATION_OCTET_STREAM)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response updateSecrets(@PathParam("secretsReference") String secretsReference, byte[] data){
+    @RequestMapping(
+            method = RequestMethod.PUT,
+            value = "/updateSecrets/{secretsReference}",
+            consumes = {MediaType.APPLICATION_OCTET_STREAM_VALUE},
+            produces = {MediaType.APPLICATION_JSON_VALUE})
+    public ResponseEntity<Object> updateSecrets(@RequestParam("secretsReference") String secretsReference, byte[] data){
         String requestId = UUIDUtils.generateRandomId();
         SecretsChestResponse secretsChestResponse = chestBaseService.updateAsset(secretsReference, data, requestId);
-        return ResponseBuilder.createSuccessfulUploadDataResponse(secretsChestResponse);
+        return ResponseBuilder.buildAndReturnResponse(secretsChestResponse);
     }
 
-    @POST
-    @Path("/retrieveSecrets/{secretsReference}")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response retrieveSecrets(@PathParam("secretsReference") String secretReference){
+    @RequestMapping(
+            method = RequestMethod.POST,
+            value = "/retrieveSecrets/{secretsReference}",
+            consumes = {MediaType.APPLICATION_JSON_VALUE},
+            produces = {MediaType.APPLICATION_JSON_VALUE})
+    public ResponseEntity<Object> retrieveSecrets(@RequestParam("secretsReference") String secretReference){
         String requestId = UUIDUtils.generateRandomId();
         SecretsChestResponse secretsChestResponse = chestBaseService.retrieveAsset(secretReference, requestId);
-        return ResponseBuilder.createSuccessfulRetrieveDataResponse(secretsChestResponse);
+        return ResponseBuilder.buildAndReturnResponse(secretsChestResponse);
     }
 }

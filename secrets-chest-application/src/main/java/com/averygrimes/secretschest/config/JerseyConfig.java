@@ -5,8 +5,8 @@ import com.averygrimes.servicediscovery.registration.ServiceDiscoveryRegister;
 import org.glassfish.jersey.server.ResourceConfig;
 import org.springframework.context.annotation.Profile;
 
-import javax.inject.Named;
-import javax.ws.rs.ApplicationPath;
+import jakarta.inject.Named;
+import jakarta.ws.rs.ApplicationPath;
 
 /**
  * @author Avery Grimes-Farrow

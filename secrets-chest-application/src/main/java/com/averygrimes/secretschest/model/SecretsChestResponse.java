@@ -1,4 +1,4 @@
-package com.averygrimes.secretschest.pojo;
+package com.averygrimes.secretschest.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Getter;

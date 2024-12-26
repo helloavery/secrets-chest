@@ -1,4 +1,4 @@
-package com.averygrimes.secretschest.pojo;
+package com.averygrimes.secretschest.model;
 
 /**
  * @author Avery Grimes-Farrow
@@ -10,8 +10,4 @@ public interface SecretsChestConstants {
 
     /** SecretsChestsBase Constants **/
     String PLAIN_TEXT_DATA = "plaintext";
-
-    /** Encrypted and Data Map Constants **/
-    String ENCRYPTED_DATA_MAP_KEY = "encryptedData";
-    String ENCRYPTED_KEY_MAP_KEY= "encryptedKey";
 }

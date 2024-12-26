@@ -9,7 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import reactor.core.publisher.Mono;
 
-import javax.annotation.PreDestroy;
+import jakarta.annotation.PreDestroy;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -149,7 +149,7 @@ class SecretsChestServiceImpl implements SecretsChestService {
             log.error("Secrets Chest response came back as null");
             throw new SecretsChestUtilsException("Secrets Chest response came back as null");
         }
-        if(response.rawStatusCode() != 200){
+        if(response.statusCode().value() != 200){
             log.error("Secrets Chest response came back as non 200");
             throw new SecretsChestUtilsException("Secrets Chest response came back as non 200");
         }

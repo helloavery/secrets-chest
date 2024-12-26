@@ -1,8 +1,8 @@
 package com.averygrimes.secretschest.utils;
 
-import com.averygrimes.secretschest.pojo.SecretsChestResponse;
+import com.averygrimes.secretschest.model.SecretsChestResponse;
 
-import javax.inject.Named;
+import jakarta.inject.Named;
 import java.util.concurrent.*;
 
 /**

@@ -1,7 +1,7 @@
 logging:
   level:
     com.averygrimes.secretschest: INFO
-  file.path: logs/secrets-chest-log
+  file.name.path: logs/secrets-chest-log
 
 server:
   error:

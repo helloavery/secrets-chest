@@ -1,7 +1,7 @@
 package com.averygrimes.secretschest.service;
 
 
-import com.averygrimes.secretschest.pojo.SecretsChestResponse;
+import com.averygrimes.secretschest.model.SecretsChestResponse;
 
 /**
  * @author Avery Grimes-Farrow

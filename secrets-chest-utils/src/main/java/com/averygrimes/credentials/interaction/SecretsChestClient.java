@@ -11,6 +11,7 @@ import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.tcp.TcpClient;
@@ -56,8 +57,7 @@ public class SecretsChestClient {
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
                 .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                 .body(BodyInserters.fromPublisher(Mono.just(dataToUpload), byte[].class))
-                .exchange()
-                .block();
+                .exchangeToFlux(Flux::just).next().block();
     }
 
     public ClientResponse updateSecrets(String secretsReference, byte[] data){
@@ -66,8 +66,7 @@ public class SecretsChestClient {
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
                 .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                 .body(BodyInserters.fromPublisher(Mono.just(data), byte[].class))
-                .exchange()
-                .block();
+                .exchangeToFlux(Flux::just).next().block();
     }
 
     public ClientResponse retrieveSecrets(String secretReference){
@@ -75,7 +74,6 @@ public class SecretsChestClient {
                 .uri("/retrieveSecrets/" + secretReference)
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-                .exchange()
-                .block();
+                .exchangeToFlux(Flux::just).next().block();
     }
 }

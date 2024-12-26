@@ -7,10 +7,10 @@ package com.averygrimes.secretschest.service;
  */
 
 import com.averygrimes.secretschest.cache.CacheBase;
-import com.averygrimes.secretschest.exceptions.SecretsChestServerException;
+import com.averygrimes.secretschest.exceptions.SecretsChestException;
 import com.averygrimes.secretschest.external.AWSService;
-import com.averygrimes.secretschest.pojo.SecretsChestConstants;
-import com.averygrimes.secretschest.pojo.SecretsChestResponse;
+import com.averygrimes.secretschest.model.SecretsChestData;
+import com.averygrimes.secretschest.model.SecretsChestResponse;
 import com.averygrimes.secretschest.utils.SecretsChestCredUtils;
 import com.averygrimes.secretschest.utils.UUIDUtils;
 import lombok.extern.slf4j.Slf4j;
@@ -21,10 +21,9 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.SdkBytes;
 
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.nio.ByteBuffer;
-import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -84,33 +83,19 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
             if (lock.tryLock(1500, TimeUnit.MILLISECONDS)) {
                 try {
                     CountDownLatch countDownLatch = new CountDownLatch(2);
-                    Map<String, byte[]> encryptedDataMap = cryptoService.generateDataKeyAndEncryptData(dataToUpload);
+                    SecretsChestData encryptedDataMap = cryptoService.generateDataKeyAndEncryptData(dataToUpload);
                     String bucketObjectReference = UUIDUtils.generateRandomId();
-                    encryptedDataMap.forEach((mapKey, encryptedData) -> {
-                        String bucket = mapKey.equals(SecretsChestConstants.ENCRYPTED_KEY_MAP_KEY) ? AWS_S3_KEY_BUCKET : AWS_S3_DATA_BUCKET;
-                        CompletableFuture<SecretsChestResponse> completableFuture = sendEncryptedUploadTasks(bucket, encryptedData, bucketObjectReference, requestId);
-                        completableFuture.whenComplete((uploadResponse, exception) -> {
-                            if (uploadResponse == null || exception != null) {
-                                log.error("Exception occurred while uploading data to S3 bucket", exception);
-                                throw SecretsChestServerException.buildResponse("Error uploading secrets data for request id: " + requestId);
-                            }
-                            if (!uploadResponse.isSuccessful()) {
-                                log.error("Operation uploading data to S3 bucket unsuccessful");
-                                throw SecretsChestServerException.buildResponse("Error uploading secrets data for request id: " + requestId);
-                            }
-                            countDownLatch.countDown();
-                        });
-                    });
-                    try {
-                        countDownLatch.await();
-                    } catch (InterruptedException e) {
-                        log.warn("Thread has been interrupted");
-                    }
+
+                    CompletableFuture<SecretsChestResponse> encryptedKeyTask = sendEncryptedUploadTasks(AWS_S3_KEY_BUCKET, encryptedDataMap.getEncryptedKey(), bucketObjectReference, requestId);
+                    CompletableFuture<SecretsChestResponse> encryptedDataTask = sendEncryptedUploadTasks(AWS_S3_DATA_BUCKET, encryptedDataMap.getEncryptedData(), bucketObjectReference, requestId);
+                    waitForCompletableFutureTasksToComplete(encryptedKeyTask, countDownLatch, requestId);
+                    waitForCompletableFutureTasksToComplete(encryptedDataTask, countDownLatch, requestId);
+
                     secretsChestResponse.setSecretReference(bucketObjectReference);
                     secretsChestResponse.setSuccessful(true);
                 } catch (Exception e) {
                     log.error("Error uploading new secrets for bucket {} for requestId {}", "dataToUpload", requestId, e);
-                    throw SecretsChestServerException.buildResponse("Error uploading secrets data for request id: " + requestId);
+                    throw new SecretsChestException("Error uploading secrets data for request id: " + requestId);
                 } finally {
                     lock.unlock();
                 }
@@ -132,7 +117,7 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
         }
         catch (Exception e) {
             log.error("Error uploading new secrets for bucket {} for requestId {}", "dataToUpload", requestId, e);
-            throw SecretsChestServerException.buildResponse("Error uploading secrets data for request id: " + requestId);
+            throw new SecretsChestException("Error uploading secrets data for request id: " + requestId);
         }
         return secretsChestResponse;
     }
@@ -150,7 +135,7 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
         }
         catch (Exception e) {
             log.error("Error updating secrets for bucket {} for requestId {}", "dataToUpload", requestId, e);
-            throw SecretsChestServerException.buildResponse("Error updating secrets data for request id: " + requestId);
+            throw new SecretsChestException("Error updating secrets data for request id: " + requestId);
         }
         return secretsChestResponse;
     }
@@ -169,7 +154,7 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
                     secretsChestResponse.setSuccessful(true);
                 }catch(Exception e){
                     log.error("Error fetching secrets for object reference {}", secretReference, e);
-                    throw SecretsChestServerException.buildResponse("Error fetching secrets for secret" + secretReference + " requestId: " + requestId);
+                    throw new SecretsChestException("Error fetching secrets for secret" + secretReference + " requestId: " + requestId);
                 }finally{
                     lock.unlock();
                 }
@@ -202,6 +187,25 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
         return completableFuture;
     }
 
+    private void waitForCompletableFutureTasksToComplete(CompletableFuture<SecretsChestResponse> completableFuture, CountDownLatch countDownLatch, String requestId){
+        try {
+            completableFuture.whenComplete((uploadResponse, exception) -> {
+                if (uploadResponse == null || exception != null) {
+                    log.error("Exception occurred while uploading data to S3 bucket", exception);
+                    throw new SecretsChestException("Error uploading secrets data for request id: " + requestId);
+                }
+                if (!uploadResponse.isSuccessful()) {
+                    log.error("Operation uploading data to S3 bucket unsuccessful");
+                    throw new SecretsChestException("Error uploading secrets data for request id: " + requestId);
+                }
+                countDownLatch.countDown();
+            });
+            countDownLatch.await();
+        } catch (InterruptedException e) {
+            log.warn("Thread has been interrupted");
+        }
+    }
+
     private void putEncryptedKeyInCache(String bucketObjectReference, byte[] encryptedKey){
         try{
             cacheService.putItemInCache(bucketObjectReference, encryptedKey);
@@ -224,7 +228,7 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
             }
             catch(DecoderException e){
                 log.error("Error decoding hex encrypted key for request id {}", requestId, e);
-                throw SecretsChestServerException.buildResponse("Error decoding hex encrypted key for request id: " + requestId);
+                throw new SecretsChestException("Error decoding hex encrypted key for request id: " + requestId);
             }
         }
     }

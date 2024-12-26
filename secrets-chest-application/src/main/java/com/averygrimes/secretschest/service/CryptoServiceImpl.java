@@ -7,7 +7,7 @@ package com.averygrimes.secretschest.service;
  */
 
 import com.averygrimes.secretschest.exceptions.SecretsChestCryptoException;
-import com.averygrimes.secretschest.pojo.SecretsChestConstants;
+import com.averygrimes.secretschest.model.SecretsChestData;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,14 +25,12 @@ import software.amazon.awssdk.services.kms.model.DecryptResponse;
 import software.amazon.awssdk.services.kms.model.GenerateDataKeyRequest;
 import software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
 import java.security.Security;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @Slf4j
@@ -64,7 +62,8 @@ public class CryptoServiceImpl implements CryptoService{
     }
 
     @Override
-    public Map<String, byte[]> generateDataKeyAndEncryptData(byte[] dataToUpload){
+    public SecretsChestData generateDataKeyAndEncryptData(byte[] dataToUpload){
+        SecretsChestData secretsChestData = new SecretsChestData();
         try{
             GenerateDataKeyResponse dataKeyResult = generateDataKey();
             SdkBytes plaintextKey = dataKeyResult.plaintext();
@@ -72,10 +71,9 @@ public class CryptoServiceImpl implements CryptoService{
 
             SecretKey plaintextSecretKey = getExistingSecretKey(plaintextKey.asByteArray());
             byte[] encryptedData = encryptData(dataToUpload, plaintextSecretKey);
-            Map<String, byte[]> encryptedDataAndKey = new ConcurrentHashMap<>();
-            encryptedDataAndKey.put(SecretsChestConstants.ENCRYPTED_DATA_MAP_KEY, encryptedData);
-            encryptedDataAndKey.put(SecretsChestConstants.ENCRYPTED_KEY_MAP_KEY, encryptedKey.asByteArray());
-            return encryptedDataAndKey;
+            secretsChestData.setEncryptedKey(encryptedKey.asByteArray());
+            secretsChestData.setEncryptedData(encryptedData);
+            return secretsChestData;
         }
         catch(Exception e){
             log.error("Error encrypting secrets to be uploaded", e);

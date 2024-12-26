@@ -17,17 +17,6 @@ import java.util.UUID;
 @Slf4j
 public class UUIDUtils {
 
-    public static String generateUUID() {
-        try {
-            MessageDigest salt = MessageDigest.getInstance("SHA-256");
-            salt.update(UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8));
-            return Hex.encodeHexString(salt.digest());
-        } catch (Exception e) {
-            log.error("Error generating new UUID", e);
-            throw new RuntimeException("Error generating new UUID", e);
-        }
-    }
-
     public static String generateRandomId(){
         return RandomStringUtils.random(24, true, true);
     }
