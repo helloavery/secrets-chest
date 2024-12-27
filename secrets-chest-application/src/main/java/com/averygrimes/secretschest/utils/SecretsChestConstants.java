@@ -1,4 +1,4 @@
-package com.averygrimes.secretschest.model;
+package com.averygrimes.secretschest.utils;
 
 /**
  * @author Avery Grimes-Farrow
@@ -10,4 +10,5 @@ public interface SecretsChestConstants {
 
     /** SecretsChestsBase Constants **/
     String PLAIN_TEXT_DATA = "plaintext";
+    String ERROR_UPLOAD = "ERROR_UPLOADING_DATA";
 }

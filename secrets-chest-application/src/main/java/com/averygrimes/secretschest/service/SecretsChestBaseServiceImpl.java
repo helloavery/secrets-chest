@@ -11,7 +11,6 @@ import com.averygrimes.secretschest.exceptions.SecretsChestException;
 import com.averygrimes.secretschest.external.AWSService;
 import com.averygrimes.secretschest.model.SecretsChestData;
 import com.averygrimes.secretschest.model.SecretsChestResponse;
-import com.averygrimes.secretschest.utils.SecretsChestCredUtils;
 import com.averygrimes.secretschest.utils.UUIDUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.DecoderException;
@@ -23,10 +22,13 @@ import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.SdkBytes;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Function;
+
+import static com.averygrimes.secretschest.utils.SecretsChestConstants.ERROR_UPLOAD;
 
 @Service
 @Slf4j
@@ -35,7 +37,6 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
     private CryptoService cryptoService;
     private CacheBase cacheService;
     private Executor executor;
-    private SecretsChestCredUtils chestCredUtils;
     private final Lock lock = new ReentrantLock(true);
     private AWSService awsService;
 
@@ -61,11 +62,6 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
     }
 
     @Autowired
-    public void setChestCredUtils(SecretsChestCredUtils chestCredUtils) {
-        this.chestCredUtils = chestCredUtils;
-    }
-
-    @Autowired
     public void setAwsService(AWSService awsService) {
         this.awsService = awsService;
     }
@@ -77,17 +73,22 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
         try {
             if (lock.tryLock(1500, TimeUnit.MILLISECONDS)) {
                 try {
-                    CountDownLatch countDownLatch = new CountDownLatch(2);
                     SecretsChestData encryptedDataMap = cryptoService.generateDataKeyAndEncryptData(dataToUpload);
                     String bucketObjectReference = UUIDUtils.generateRandomId();
-
-                    CompletableFuture<SecretsChestResponse> encryptedKeyTask = sendEncryptedUploadTasks(AWS_S3_KEY_BUCKET, encryptedDataMap.getEncryptedKey(), bucketObjectReference, requestId);
-                    CompletableFuture<SecretsChestResponse> encryptedDataTask = sendEncryptedUploadTasks(AWS_S3_DATA_BUCKET, encryptedDataMap.getEncryptedData(), bucketObjectReference, requestId);
-                    waitForCompletableFutureTasksToComplete(encryptedKeyTask, countDownLatch, requestId);
-                    waitForCompletableFutureTasksToComplete(encryptedDataTask, countDownLatch, requestId);
-
                     secretsChestResponse.setSecretReference(bucketObjectReference);
                     secretsChestResponse.setSuccessful(true);
+
+                    List<CompletableFuture<SecretsChestResponse>> completableFutures = new ArrayList<>();
+                    sendEncryptedUploadTask(completableFutures, AWS_S3_KEY_BUCKET, encryptedDataMap.getEncryptedKey(), bucketObjectReference, requestId);
+                    sendEncryptedUploadTask(completableFutures, AWS_S3_DATA_BUCKET, encryptedDataMap.getEncryptedData(), bucketObjectReference, requestId);
+
+                    CompletableFuture.allOf(completableFutures.toArray(new CompletableFuture[0])).join();
+                    for(CompletableFuture<SecretsChestResponse> result : completableFutures){
+                        if(!result.get().isSuccessful()){
+                            secretsChestResponse.setSecretReference(ERROR_UPLOAD);
+                            secretsChestResponse.setSuccessful(false);
+                        }
+                    }
                 } catch (Exception e) {
                     log.error("Error uploading new secrets for bucket {} for requestId {}", "dataToUpload", requestId, e);
                     throw new SecretsChestException("Error uploading secrets data for request id: " + requestId);
@@ -160,9 +161,8 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
         return secretsChestResponse;
     }
 
-    private CompletableFuture<SecretsChestResponse> sendEncryptedUploadTasks(String bucket, byte[] dataToUpload, String bucketObjectReference, String requestId){
-        CompletableFuture<SecretsChestResponse> completableFuture = new CompletableFuture<>();
-        CompletableFuture.supplyAsync(() -> {
+    private void sendEncryptedUploadTask(List<CompletableFuture<SecretsChestResponse>> completableFutures, String bucket, byte[] dataToUpload, String bucketObjectReference, String requestId){
+        CompletableFuture<SecretsChestResponse> completableFuture = CompletableFuture.supplyAsync(() -> {
             SecretsChestResponse secretsChestResponse = null;
             try{
                 secretsChestResponse = new SecretsChestResponse();
@@ -172,33 +172,13 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
                     putEncryptedKeyInCache(bucketObjectReference, dataToUpload);
                 }
                 secretsChestResponse.setSuccessful(true);
-                completableFuture.complete(secretsChestResponse);
             }
             catch(Exception e){
                 log.error("Error completing upload data task", e);
             }
             return secretsChestResponse;
-        }, executor).applyToEither(chestCredUtils.timeoutRetrieveInvocationResponse(completableFuture, 10, TimeUnit.SECONDS), Function.identity());
-        return completableFuture;
-    }
-
-    private void waitForCompletableFutureTasksToComplete(CompletableFuture<SecretsChestResponse> completableFuture, CountDownLatch countDownLatch, String requestId){
-        try {
-            completableFuture.whenComplete((uploadResponse, exception) -> {
-                if (uploadResponse == null || exception != null) {
-                    log.error("Exception occurred while uploading data to S3 bucket", exception);
-                    throw new SecretsChestException("Error uploading secrets data for request id: " + requestId);
-                }
-                if (!uploadResponse.isSuccessful()) {
-                    log.error("Operation uploading data to S3 bucket unsuccessful");
-                    throw new SecretsChestException("Error uploading secrets data for request id: " + requestId);
-                }
-                countDownLatch.countDown();
-            });
-            countDownLatch.await();
-        } catch (InterruptedException e) {
-            log.warn("Thread has been interrupted");
-        }
+        }, executor).orTimeout(10000, TimeUnit.MILLISECONDS);
+        completableFutures.add(completableFuture);
     }
 
     private void putEncryptedKeyInCache(String bucketObjectReference, byte[] encryptedKey){

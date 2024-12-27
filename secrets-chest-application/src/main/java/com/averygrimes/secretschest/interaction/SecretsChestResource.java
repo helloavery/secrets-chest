@@ -1,6 +1,6 @@
 package com.averygrimes.secretschest.interaction;
 
-import com.averygrimes.secretschest.model.SecretsChestConstants;
+import com.averygrimes.secretschest.utils.SecretsChestConstants;
 import com.averygrimes.secretschest.model.SecretsChestResponse;
 import com.averygrimes.secretschest.service.SecretsChestBaseService;
 import com.averygrimes.secretschest.utils.ResponseBuilder;
