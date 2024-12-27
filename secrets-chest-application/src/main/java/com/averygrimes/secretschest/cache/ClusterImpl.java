@@ -8,18 +8,15 @@ import com.hazelcast.memory.MemorySize;
 import com.hazelcast.memory.MemoryUnit;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.PostConstruct;
-
 @Service
 public class ClusterImpl implements Cluster {
 
-    private HazelcastInstance hzInstance;
+    private final HazelcastInstance hzInstance;
     private int backupCount;
     private int maxIdleSeconds;
     private int ttlSeconds;
 
-    @PostConstruct
-    public void init(){
+    public ClusterImpl(){
         Config config = new Config();
         config.setClusterName("secrets-chest");
         MemorySize memorySize = new MemorySize(512, MemoryUnit.MEGABYTES);

@@ -11,21 +11,16 @@ import com.averygrimes.secretschest.model.SecretsChestData;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.auth.credentials.AwsCredentials;
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.SdkBytes;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.kms.KmsClient;
 import software.amazon.awssdk.services.kms.model.DecryptRequest;
 import software.amazon.awssdk.services.kms.model.DecryptResponse;
 import software.amazon.awssdk.services.kms.model.GenerateDataKeyRequest;
 import software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse;
 
-import jakarta.annotation.PostConstruct;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -41,6 +36,8 @@ public class CryptoServiceImpl implements CryptoService{
     private Cipher cipher;
     private static final String AES = "AES";
     private static final String AES_256 = "AES_256";
+
+    @Value("${kmsKeyARN}")
     private static String KMS_KEY_ARN;
 
     @Autowired
@@ -48,17 +45,13 @@ public class CryptoServiceImpl implements CryptoService{
         this.environment = environment;
     }
 
-    @PostConstruct
-    private void init(){
-        try{
-            Security.addProvider(new BouncyCastleProvider());
-            this.kmsClient = KmsClient.builder().region(Region.US_EAST_2).credentialsProvider(awsCredentialsProviderSetup()).build();
-            KMS_KEY_ARN = environment.getProperty("kmsKeyARN");
-        }
-        catch(Exception e){
-            log.error("Error setting up and initializing service", e);
-            throw new SecretsChestCryptoException("Error setting up and initializing service", e);
-        }
+    @Autowired
+    public void setKmsClient(KmsClient kmsClient) {
+        this.kmsClient = kmsClient;
+    }
+
+    public CryptoServiceImpl(){
+        Security.addProvider(new BouncyCastleProvider());
     }
 
     @Override
@@ -105,12 +98,6 @@ public class CryptoServiceImpl implements CryptoService{
             log.error("Error decrypting secrets", e);
             throw new SecretsChestCryptoException("Error decrypting secrets: " + e.getMessage());
         }
-    }
-
-    private AwsCredentialsProvider awsCredentialsProviderSetup(){
-        log.info("Retrieving IAM credentials");
-        AwsCredentials credentials = ProfileCredentialsProvider.create("kmsUser").resolveCredentials();
-        return StaticCredentialsProvider.create(credentials);
     }
 
     private GenerateDataKeyResponse generateDataKey(){

@@ -11,7 +11,6 @@ import com.hazelcast.map.IMap;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.PostConstruct;
 import java.io.Serializable;
 import java.util.concurrent.TimeUnit;
 
@@ -29,20 +28,9 @@ public class AbstractCache implements CacheBase {
         this.cluster = cluster;
     }
 
-    @PostConstruct
-    public void init(){
-        this.hzInstance = (HazelcastInstance) this.cluster.getHzInstance();
-        this.name = "secrets-chest";
-        if (!cacheExists(hzInstance, name)) {
-            MapConfig mapConfig = getMapConfig();
-            mapConfig.setTimeToLiveSeconds(cluster.getTtlSeconds());
-            this.hzInstance.getConfig().addMapConfig(mapConfig);
-        }
-        this.cacheMap = hzInstance.getMap(name);
-    }
-
     @Override
     public Object getItemFromCache(String key) {
+        initCacheInstanceIfNull();
         if(key == null){
             throw new CacheException("");
         }
@@ -57,29 +45,35 @@ public class AbstractCache implements CacheBase {
 
     @Override
     public void putItemInCache(String key, Object value) {
+        initCacheInstanceIfNull();
         putItemInCache(key, value, (long) cluster.getTtlSeconds(), TimeUnit.SECONDS);
     }
 
     public void putItemInCache(String key, Object value, Long ttl, TimeUnit timeUnit) {
+        initCacheInstanceIfNull();
         cacheMap.putIfAbsent(key, createCacheObject(key, value), ttl, timeUnit);
     }
 
     @Override
     public void updateItemInCache(String key, Object value) {
+        initCacheInstanceIfNull();
         updateItemInCache(key, value, (long) cluster.getTtlSeconds(), TimeUnit.SECONDS);
     }
 
     public void updateItemInCache(String key, Object value, Long ttl, TimeUnit timeUnit){
+        initCacheInstanceIfNull();
         cacheMap.put(key, createCacheObject(key, value), ttl, timeUnit);
     }
 
     @Override
     public void removeItemFromCache(String key) {
+        initCacheInstanceIfNull();
         cacheMap.remove(key);
     }
 
     @Override
     public void clearCache() {
+        initCacheInstanceIfNull();
         cacheMap.clear();
     }
 
@@ -107,5 +101,18 @@ public class AbstractCache implements CacheBase {
             }
         }
         return false;
+    }
+
+    private void initCacheInstanceIfNull(){
+        if(this.hzInstance == null){
+            this.hzInstance = (HazelcastInstance) this.cluster.getHzInstance();
+            this.name = "secrets-chest";
+            if (!cacheExists(hzInstance, name)) {
+                MapConfig mapConfig = getMapConfig();
+                mapConfig.setTimeToLiveSeconds(cluster.getTtlSeconds());
+                this.hzInstance.getConfig().addMapConfig(mapConfig);
+            }
+            this.cacheMap = hzInstance.getMap(name);
+        }
     }
 }

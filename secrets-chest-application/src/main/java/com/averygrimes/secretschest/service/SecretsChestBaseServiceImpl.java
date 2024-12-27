@@ -17,12 +17,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.env.Environment;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.SdkBytes;
 
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import java.nio.ByteBuffer;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
@@ -33,24 +32,27 @@ import java.util.function.Function;
 @Slf4j
 public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
 
-    private Environment environment;
     private CryptoService cryptoService;
     private CacheBase cacheService;
-    private ExecutorService executorService;
+    private Executor executor;
     private SecretsChestCredUtils chestCredUtils;
-    private Lock lock;
+    private final Lock lock = new ReentrantLock(true);
     private AWSService awsService;
-    private static String AWS_S3_DATA_BUCKET;
-    private static String AWS_S3_KEY_BUCKET;
 
-    @Autowired
-    public void setEnvironment(Environment environment) {
-        this.environment = environment;
-    }
+    @Value("${AWSS3DataBucket}")
+    private static String AWS_S3_DATA_BUCKET;
+    @Value("${AWSS3KeyBucket}")
+    private static String AWS_S3_KEY_BUCKET;
 
     @Autowired
     public void setCryptoService(CryptoService cryptoService) {
         this.cryptoService = cryptoService;
+    }
+
+    @Autowired
+    @Qualifier("s3UploadAsyncThreadPoolTaskExecutor")
+    public void setExecutor(Executor executor) {
+        this.executor = executor;
     }
 
     @Autowired
@@ -68,13 +70,6 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
         this.awsService = awsService;
     }
 
-    @PostConstruct
-    public void init(){
-        AWS_S3_DATA_BUCKET = environment.getProperty("AWSS3DataBucket");
-        AWS_S3_KEY_BUCKET = environment.getProperty("AWSS3KeyBucket");
-        this.executorService = Executors.newFixedThreadPool(100);
-        this.lock = new ReentrantLock(true);
-    }
 
     @Override
     public SecretsChestResponse uploadAsset(byte[] dataToUpload, String requestId){
@@ -183,7 +178,7 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
                 log.error("Error completing upload data task", e);
             }
             return secretsChestResponse;
-        }, executorService).applyToEither(chestCredUtils.timeoutRetrieveInvocationResponse(completableFuture, 10, TimeUnit.SECONDS), Function.identity());
+        }, executor).applyToEither(chestCredUtils.timeoutRetrieveInvocationResponse(completableFuture, 10, TimeUnit.SECONDS), Function.identity());
         return completableFuture;
     }
 
@@ -231,10 +226,5 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
                 throw new SecretsChestException("Error decoding hex encrypted key for request id: " + requestId);
             }
         }
-    }
-
-    @PreDestroy
-    public void preDestroy(){
-        executorService.shutdown();
     }
 }

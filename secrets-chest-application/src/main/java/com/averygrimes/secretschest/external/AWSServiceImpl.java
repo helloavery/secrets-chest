@@ -2,15 +2,13 @@ package com.averygrimes.secretschest.external;
 
 import com.averygrimes.secretschest.exceptions.AWSOperationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-
-import jakarta.annotation.PostConstruct;
 
 /**
  * @author Avery Grimes-Farrow
@@ -24,9 +22,9 @@ public class AWSServiceImpl implements AWSService{
 
     private S3Client amazonS3Client;
 
-    @PostConstruct
-    public void init(){
-        this.amazonS3Client = S3Client.builder().region(Region.US_EAST_2).build();
+    @Autowired
+    public void setAmazonS3Client(S3Client amazonS3Client) {
+        this.amazonS3Client = amazonS3Client;
     }
 
     @Override
