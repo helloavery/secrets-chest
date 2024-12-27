@@ -11,4 +11,6 @@ public interface SecretsChestConstants {
     /** SecretsChestsBase Constants **/
     String PLAIN_TEXT_DATA = "plaintext";
     String ERROR_UPLOAD = "ERROR_UPLOADING_DATA";
+    String AES_ENCRYPTION = "AES";
+    String AES_256_ENCRYPTION = "AES_256";
 }

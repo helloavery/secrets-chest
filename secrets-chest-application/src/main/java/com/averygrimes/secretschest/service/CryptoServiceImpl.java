@@ -12,7 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.kms.KmsClient;
@@ -27,23 +26,18 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
 import java.security.Security;
 
+import static com.averygrimes.secretschest.utils.SecretsChestConstants.AES_256_ENCRYPTION;
+import static com.averygrimes.secretschest.utils.SecretsChestConstants.AES_ENCRYPTION;
+
 @Service
 @Slf4j
 public class CryptoServiceImpl implements CryptoService{
 
-    private Environment environment;
     private KmsClient kmsClient;
     private Cipher cipher;
-    private static final String AES = "AES";
-    private static final String AES_256 = "AES_256";
 
-    @Value("${kmsKeyARN}")
-    private static String KMS_KEY_ARN;
-
-    @Autowired
-    public void setEnvironment(Environment environment) {
-        this.environment = environment;
-    }
+    @Value("${aws.kms.keyArn}")
+    private String kmsKeyARN;
 
     @Autowired
     public void setKmsClient(KmsClient kmsClient) {
@@ -101,7 +95,7 @@ public class CryptoServiceImpl implements CryptoService{
     }
 
     private GenerateDataKeyResponse generateDataKey(){
-        GenerateDataKeyRequest dataKeyRequest = GenerateDataKeyRequest.builder().keyId(KMS_KEY_ARN).keySpec(AES_256).build();
+        GenerateDataKeyRequest dataKeyRequest = GenerateDataKeyRequest.builder().keyId(kmsKeyARN).keySpec(AES_ENCRYPTION).build();
         return kmsClient.generateDataKey(dataKeyRequest);
     }
 
@@ -112,13 +106,13 @@ public class CryptoServiceImpl implements CryptoService{
     }
 
     private SecretKey getExistingSecretKey(byte[] encodedSecretKey){
-        return new SecretKeySpec(encodedSecretKey, 0, encodedSecretKey.length, AES_256);
+        return new SecretKeySpec(encodedSecretKey, 0, encodedSecretKey.length, AES_256_ENCRYPTION);
     }
 
     private byte[] encryptData(byte[] dataToEncrypt, SecretKey secretKey) {
         try {
             log.info("Encrypting retrieved secrets");
-            cipher = Cipher.getInstance(AES);
+            cipher = Cipher.getInstance(AES_ENCRYPTION);
             cipher.init(Cipher.ENCRYPT_MODE, secretKey);
             return cipher.doFinal(dataToEncrypt);
         } catch (Exception e) {
@@ -130,7 +124,7 @@ public class CryptoServiceImpl implements CryptoService{
     private byte[] decryptData(byte[] encryptedData, SecretKey secretKey){
         try{
             log.info("decrypting secrets");
-            cipher = Cipher.getInstance(AES);
+            cipher = Cipher.getInstance(AES_ENCRYPTION);
             cipher.init(Cipher.DECRYPT_MODE, secretKey);
             return cipher.doFinal(encryptedData);
         }
