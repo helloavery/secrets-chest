@@ -9,3 +9,10 @@ server:
 
 server.servlet.context-path: /secrets-chest-service
 server.port: 6570
+
+aws:
+  s3:
+    keyBucket: averysecretschestkeys
+    dataBucket: averysecretschestdata
+  kms:
+    keyArn: arn:aws:iam::004586521341:user/averykmsuser

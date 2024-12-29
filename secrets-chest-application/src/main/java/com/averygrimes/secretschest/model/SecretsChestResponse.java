@@ -21,6 +21,7 @@ public class SecretsChestResponse {
 
     private boolean isSuccessful;
     private byte[] data;
+    private String plainTextData;
     private String secretReference;
     private List<String> errors;
 }

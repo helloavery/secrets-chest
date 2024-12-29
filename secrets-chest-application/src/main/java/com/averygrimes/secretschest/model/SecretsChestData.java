@@ -5,6 +5,7 @@ import lombok.Data;
 @Data
 public class SecretsChestData {
 
-    private byte[] encryptedKey;
+    private String keyId;
     private byte[] encryptedData;
+    private String hexEncodedEncryptedData;
 }

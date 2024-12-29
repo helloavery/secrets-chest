@@ -13,9 +13,9 @@ public interface SecretsChestBaseService {
 
     SecretsChestResponse uploadAsset(byte[] dataToUpload, String requestId);
 
-    SecretsChestResponse uploadPlainTextAsset(String dataToUpload, String requestId);
+    SecretsChestResponse uploadPlainTextAsset(String dataToUpload, boolean isEncryptionDisabled, String requestId);
 
     SecretsChestResponse updateAsset(String secretsReference, byte[] dataToUpload, String requestId);
 
-    SecretsChestResponse retrieveAsset(String secretReference, String requestId);
+    SecretsChestResponse retrieveAsset(String secretReference, boolean isEncryptionDisabled, String requestId);
 }

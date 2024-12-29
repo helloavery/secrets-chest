@@ -9,35 +9,21 @@ package com.averygrimes.secretschest.service;
 import com.averygrimes.secretschest.exceptions.SecretsChestCryptoException;
 import com.averygrimes.secretschest.model.SecretsChestData;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.codec.binary.Hex;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.kms.KmsClient;
-import software.amazon.awssdk.services.kms.model.DecryptRequest;
-import software.amazon.awssdk.services.kms.model.DecryptResponse;
-import software.amazon.awssdk.services.kms.model.GenerateDataKeyRequest;
-import software.amazon.awssdk.services.kms.model.GenerateDataKeyResponse;
+import software.amazon.awssdk.services.kms.model.*;
 
-import javax.crypto.Cipher;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.ByteBuffer;
 import java.security.Security;
-
-import static com.averygrimes.secretschest.utils.SecretsChestConstants.AES_256_ENCRYPTION;
-import static com.averygrimes.secretschest.utils.SecretsChestConstants.AES_ENCRYPTION;
 
 @Service
 @Slf4j
-public class CryptoServiceImpl implements CryptoService{
+public class CryptoServiceImpl implements CryptoService {
 
     private KmsClient kmsClient;
-    private Cipher cipher;
-
-    @Value("${aws.kms.keyArn}")
-    private String kmsKeyARN;
 
     @Autowired
     public void setKmsClient(KmsClient kmsClient) {
@@ -49,17 +35,18 @@ public class CryptoServiceImpl implements CryptoService{
     }
 
     @Override
-    public SecretsChestData generateDataKeyAndEncryptData(byte[] dataToUpload){
+    public SecretsChestData generateDataKeyAndEncryptData(byte[] dataToUpload, String requestId){
         SecretsChestData secretsChestData = new SecretsChestData();
         try{
-            GenerateDataKeyResponse dataKeyResult = generateDataKey();
-            SdkBytes plaintextKey = dataKeyResult.plaintext();
-            SdkBytes encryptedKey = dataKeyResult.ciphertextBlob();
+            CreateKeyResponse dataKeyResult = createDataKey(requestId);
+            String keyId = dataKeyResult.keyMetadata().keyId();
 
-            SecretKey plaintextSecretKey = getExistingSecretKey(plaintextKey.asByteArray());
-            byte[] encryptedData = encryptData(dataToUpload, plaintextSecretKey);
-            secretsChestData.setEncryptedKey(encryptedKey.asByteArray());
+            byte[] encryptedData = encryptData(keyId, SdkBytes.fromByteArray(dataToUpload));
+            String hexEncodedEncryptedData = Hex.encodeHexString(encryptedData);
+
+            secretsChestData.setKeyId(keyId);
             secretsChestData.setEncryptedData(encryptedData);
+            secretsChestData.setHexEncodedEncryptedData(hexEncodedEncryptedData);
             return secretsChestData;
         }
         catch(Exception e){
@@ -69,11 +56,17 @@ public class CryptoServiceImpl implements CryptoService{
     }
 
     @Override
-    public byte[] encryptDataWithoutGeneratingDataKey(byte[] dataToUpload, SdkBytes encryptedKey){
+    public SecretsChestData encryptDataWithoutGeneratingDataKey(String keyId, byte[] dataToUpload){
         try{
-            SdkBytes decryptedKey = decryptDataKeyAndReturnPlainTextKey(encryptedKey);
-            SecretKey plaintextSecretKey = getExistingSecretKey(decryptedKey.asByteArray());
-            return encryptData(dataToUpload, plaintextSecretKey);
+            SecretsChestData secretsChestData = new SecretsChestData();
+
+            byte[] encryptedData =  encryptData(keyId, SdkBytes.fromByteArray(dataToUpload));
+            String hexEncodedEncryptedData = Hex.encodeHexString(encryptedData);
+
+            secretsChestData.setKeyId(keyId);
+            secretsChestData.setEncryptedData(encryptedData);
+            secretsChestData.setHexEncodedEncryptedData(hexEncodedEncryptedData);
+            return secretsChestData;
         }
         catch(Exception e){
             log.error("Error encrypting secrets to be uploaded", e);
@@ -82,11 +75,10 @@ public class CryptoServiceImpl implements CryptoService{
     }
 
     @Override
-    public byte[] decryptData(byte[] encryptedData, ByteBuffer encryptedKey){
+    public byte[] decryptData(String keyId, String hexEncodedEncryptedData){
         try{
-            SdkBytes plaintextKey = decryptDataKeyAndReturnPlainTextKey(SdkBytes.fromByteBuffer(encryptedKey));
-            SecretKey plaintextSecretKey = getExistingSecretKey(plaintextKey.asByteArray());
-            return decryptData(encryptedData, plaintextSecretKey);
+            byte[] encryptedData = Hex.decodeHex(hexEncodedEncryptedData);
+            return performDecryptData(keyId, SdkBytes.fromByteArray(encryptedData));
         }
         catch(Exception e){
             log.error("Error decrypting secrets", e);
@@ -94,39 +86,41 @@ public class CryptoServiceImpl implements CryptoService{
         }
     }
 
-    private GenerateDataKeyResponse generateDataKey(){
-        GenerateDataKeyRequest dataKeyRequest = GenerateDataKeyRequest.builder().keyId(kmsKeyARN).keySpec(AES_ENCRYPTION).build();
-        return kmsClient.generateDataKey(dataKeyRequest);
+    private CreateKeyResponse createDataKey(String requestId){
+        CreateKeyRequest keyRequest = CreateKeyRequest.builder()
+                .description(requestId)
+                .keySpec(KeySpec.RSA_4096)
+                .keyUsage(KeyUsageType.ENCRYPT_DECRYPT)
+                .build();
+        return kmsClient.createKey(keyRequest);
     }
 
-    private SdkBytes decryptDataKeyAndReturnPlainTextKey(SdkBytes ciphertextBlob){
-        DecryptRequest req = DecryptRequest.builder().ciphertextBlob(ciphertextBlob).build();
-        DecryptResponse res = kmsClient.decrypt(req);
-        return res.plaintext();
-    }
-
-    private SecretKey getExistingSecretKey(byte[] encodedSecretKey){
-        return new SecretKeySpec(encodedSecretKey, 0, encodedSecretKey.length, AES_256_ENCRYPTION);
-    }
-
-    private byte[] encryptData(byte[] dataToEncrypt, SecretKey secretKey) {
+    private byte[] encryptData(String keyId, SdkBytes dataToEncrypt) {
         try {
             log.info("Encrypting retrieved secrets");
-            cipher = Cipher.getInstance(AES_ENCRYPTION);
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey);
-            return cipher.doFinal(dataToEncrypt);
+            EncryptRequest encryptRequest = EncryptRequest.builder()
+                    .keyId(keyId)
+                    .encryptionAlgorithm(EncryptionAlgorithmSpec.RSAES_OAEP_SHA_256)
+                    .plaintext(dataToEncrypt)
+                    .build();
+            EncryptResponse encryptResponse = kmsClient.encrypt(encryptRequest);
+            return encryptResponse.ciphertextBlob().asByteArray();
         } catch (Exception e) {
             log.error("Error encrypting retrieved secrets", e);
             throw new SecretsChestCryptoException("Error encrypted retrieved secrets", e);
         }
     }
 
-    private byte[] decryptData(byte[] encryptedData, SecretKey secretKey){
+    private byte[] performDecryptData(String keyId, SdkBytes encryptedData){
         try{
             log.info("decrypting secrets");
-            cipher = Cipher.getInstance(AES_ENCRYPTION);
-            cipher.init(Cipher.DECRYPT_MODE, secretKey);
-            return cipher.doFinal(encryptedData);
+            DecryptRequest decryptRequest = DecryptRequest.builder()
+                    .ciphertextBlob(encryptedData)
+                    .keyId(keyId)
+                    .encryptionAlgorithm(EncryptionAlgorithmSpec.RSAES_OAEP_SHA_256)
+                    .build();
+            DecryptResponse decryptResponse = kmsClient.decrypt(decryptRequest);
+            return decryptResponse.plaintext().asByteArray();
         }
         catch(Exception e){
             log.error("Error decrypting secrets", e);

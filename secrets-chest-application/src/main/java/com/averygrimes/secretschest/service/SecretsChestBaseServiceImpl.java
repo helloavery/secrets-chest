@@ -13,22 +13,18 @@ import com.averygrimes.secretschest.model.SecretsChestData;
 import com.averygrimes.secretschest.model.SecretsChestResponse;
 import com.averygrimes.secretschest.utils.UUIDUtils;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.codec.DecoderException;
-import org.apache.commons.codec.binary.Hex;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.core.SdkBytes;
 
-import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import static com.averygrimes.secretschest.utils.SecretsChestConstants.ERROR_UPLOAD;
 
 @Service
 @Slf4j
@@ -71,45 +67,29 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
     public SecretsChestResponse uploadAsset(byte[] dataToUpload, String requestId){
         SecretsChestResponse secretsChestResponse = new SecretsChestResponse();
         try {
-            if (lock.tryLock(1500, TimeUnit.MILLISECONDS)) {
-                try {
-                    SecretsChestData encryptedDataMap = cryptoService.generateDataKeyAndEncryptData(dataToUpload);
-                    String bucketObjectReference = UUIDUtils.generateRandomId();
-                    secretsChestResponse.setSecretReference(bucketObjectReference);
-                    secretsChestResponse.setSuccessful(true);
-
-                    List<CompletableFuture<SecretsChestResponse>> completableFutures = new ArrayList<>();
-                    sendEncryptedUploadTask(completableFutures, awsS3KeyBucket, encryptedDataMap.getEncryptedKey(), bucketObjectReference, requestId);
-                    sendEncryptedUploadTask(completableFutures, awsS3DataBucket, encryptedDataMap.getEncryptedData(), bucketObjectReference, requestId);
-
-                    CompletableFuture.allOf(completableFutures.toArray(new CompletableFuture[0])).join();
-                    for(CompletableFuture<SecretsChestResponse> result : completableFutures){
-                        if(!result.get().isSuccessful()){
-                            secretsChestResponse.setSecretReference(ERROR_UPLOAD);
-                            secretsChestResponse.setSuccessful(false);
-                        }
-                    }
-                } catch (Exception e) {
-                    log.error("Error uploading new secrets for bucket {} for requestId {}", "dataToUpload", requestId, e);
-                    throw new SecretsChestException("Error uploading secrets data for request id: " + requestId);
-                } finally {
-                    lock.unlock();
-                }
-            }
-        } catch (InterruptedException e) {
+            String bucketObjectReference = UUIDUtils.generateRandomId();
+            secretsChestResponse.setSecretReference(bucketObjectReference);
+            boolean isUploadSuccessful = performEncryptedUpload(dataToUpload, bucketObjectReference, requestId);
+            secretsChestResponse.setSuccessful(isUploadSuccessful);
+        } catch (Exception e) {
             log.warn("Thread has been interrupted while acquiring lock");
         }
         return secretsChestResponse;
     }
 
     @Override
-    public SecretsChestResponse uploadPlainTextAsset(String dataToUpload, String requestId){
+    public SecretsChestResponse uploadPlainTextAsset(String dataToUpload, boolean isEncryptionDisabled, String requestId){
         SecretsChestResponse secretsChestResponse = new SecretsChestResponse();
         try {
             String bucketObjectReference = UUIDUtils.generateRandomId();
-            awsService.sendUploadBucketObjectRequest(awsS3DataBucket, bucketObjectReference, dataToUpload, requestId);
+            if(isEncryptionDisabled){
+                awsService.sendUploadBucketObjectRequest(awsS3DataBucket, bucketObjectReference, dataToUpload, requestId);
+                secretsChestResponse.setSuccessful(true);
+            }else {
+                boolean isUploadSuccessful = performEncryptedUpload(dataToUpload.getBytes(StandardCharsets.UTF_8), bucketObjectReference, requestId);
+                secretsChestResponse.setSuccessful(isUploadSuccessful);
+            }
             secretsChestResponse.setSecretReference(bucketObjectReference);
-            secretsChestResponse.setSuccessful(true);
         }
         catch (Exception e) {
             log.error("Error uploading new secrets for bucket {} for requestId {}", "dataToUpload", requestId, e);
@@ -122,10 +102,9 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
     public SecretsChestResponse updateAsset(String secretsReference, byte[] dataToUpload, String requestId){
         SecretsChestResponse secretsChestResponse = new SecretsChestResponse();
         try {
-            ByteBuffer encryptedKey = attemptToGetKeyFromCacheThenBucket(secretsReference, requestId).asByteBuffer();
-            byte[] encryptedData = cryptoService.encryptDataWithoutGeneratingDataKey(dataToUpload, SdkBytes.fromByteBuffer(encryptedKey));
-            String hexEncodedEncryptedData = Hex.encodeHexString(encryptedData);
-            awsService.sendUploadBucketObjectRequest(awsS3DataBucket, secretsReference, hexEncodedEncryptedData, requestId);
+            String keyId = getKeyIdFromCacheOrBucket(secretsReference, requestId);
+            SecretsChestData encryptedKeyAndData = cryptoService.encryptDataWithoutGeneratingDataKey(keyId, dataToUpload);
+            awsService.sendUploadBucketObjectRequest(awsS3DataBucket, secretsReference, encryptedKeyAndData.getHexEncodedEncryptedData(), requestId);
             secretsChestResponse.setSecretReference(secretsReference);
             secretsChestResponse.setSuccessful(true);
         }
@@ -137,16 +116,21 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
     }
 
     @Override
-    public SecretsChestResponse retrieveAsset(String secretReference, String requestId){
+    public SecretsChestResponse retrieveAsset(String secretReference, boolean isEncryptionDisabled, String requestId){
         SecretsChestResponse secretsChestResponse = new SecretsChestResponse();
         try {
             if(lock.tryLock(3500, TimeUnit.MILLISECONDS)){
                 try{
                     String s3ObjectOutput = (String) awsService.sendRetrieveBucketObjectResponse(awsS3DataBucket, secretReference, requestId, true);
-                    byte[] hexDecodedBucketObject = Hex.decodeHex(s3ObjectOutput);
-                    SdkBytes encryptedKey = attemptToGetKeyFromCacheThenBucket(secretReference, requestId);
-                    byte[] decryptedData = cryptoService.decryptData(hexDecodedBucketObject, encryptedKey.asByteBuffer());
-                    secretsChestResponse.setData(decryptedData);
+                    if(!isEncryptionDisabled){
+                        String keyId = getKeyIdFromCacheOrBucket(secretReference, requestId);
+                        byte[] decryptedData = cryptoService.decryptData(keyId, s3ObjectOutput);
+                        secretsChestResponse.setData(decryptedData);
+                        secretsChestResponse.setPlainTextData(new String(decryptedData));
+                    }else{
+                        secretsChestResponse.setPlainTextData(s3ObjectOutput);
+                    }
+                    secretsChestResponse.setSecretReference(secretReference);
                     secretsChestResponse.setSuccessful(true);
                 }catch(Exception e){
                     log.error("Error fetching secrets for object reference {}", secretReference, e);
@@ -161,15 +145,42 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
         return secretsChestResponse;
     }
 
-    private void sendEncryptedUploadTask(List<CompletableFuture<SecretsChestResponse>> completableFutures, String bucket, byte[] dataToUpload, String bucketObjectReference, String requestId){
+    private boolean performEncryptedUpload(byte[] dataToUpload, String bucketObjectReference, String requestId){
+        boolean isOperationSuccessful = true;
+        try {
+            if (lock.tryLock(1500, TimeUnit.MILLISECONDS)) {
+                try {
+                    SecretsChestData encryptionKeyAndData = cryptoService.generateDataKeyAndEncryptData(dataToUpload, requestId);
+                    List<CompletableFuture<SecretsChestResponse>> completableFutures = new ArrayList<>();
+                    sendBucketUploadTask(completableFutures, awsS3KeyBucket, encryptionKeyAndData.getKeyId(), bucketObjectReference, requestId);
+                    sendBucketUploadTask(completableFutures, awsS3DataBucket, encryptionKeyAndData.getHexEncodedEncryptedData(), bucketObjectReference, requestId);
+                    CompletableFuture.allOf(completableFutures.toArray(new CompletableFuture[0])).join();
+                    for(CompletableFuture<SecretsChestResponse> result : completableFutures){
+                        if(!result.get().isSuccessful()){
+                            isOperationSuccessful = false;
+                        }
+                    }
+                } catch (Exception e) {
+                    log.error("Error uploading new secrets for bucket {} for requestId {}", "dataToUpload", requestId, e);
+                    throw new SecretsChestException("Error uploading secrets data for request id: " + requestId);
+                } finally {
+                    lock.unlock();
+                }
+            }
+        } catch (InterruptedException e) {
+            log.warn("Thread has been interrupted while acquiring lock");
+        }
+        return isOperationSuccessful;
+    }
+
+    private void sendBucketUploadTask(List<CompletableFuture<SecretsChestResponse>> completableFutures, String bucket, String dataToUpload, String bucketObjectReference, String requestId){
         CompletableFuture<SecretsChestResponse> completableFuture = CompletableFuture.supplyAsync(() -> {
             SecretsChestResponse secretsChestResponse = null;
             try{
                 secretsChestResponse = new SecretsChestResponse();
-                String hexEncodedBytes = Hex.encodeHexString(dataToUpload);
-                awsService.sendUploadBucketObjectRequest(bucket, bucketObjectReference, hexEncodedBytes, requestId);
+                awsService.sendUploadBucketObjectRequest(bucket, bucketObjectReference, dataToUpload, requestId);
                 if(bucket.equalsIgnoreCase(awsS3KeyBucket)){
-                    putEncryptedKeyInCache(bucketObjectReference, dataToUpload);
+                    putItemInCache(bucketObjectReference, dataToUpload);
                 }
                 secretsChestResponse.setSuccessful(true);
             }
@@ -181,7 +192,7 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
         completableFutures.add(completableFuture);
     }
 
-    private void putEncryptedKeyInCache(String bucketObjectReference, byte[] encryptedKey){
+    private void putItemInCache(String bucketObjectReference, String encryptedKey){
         try{
             cacheService.putItemInCache(bucketObjectReference, encryptedKey);
         }
@@ -190,21 +201,18 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
         }
     }
 
-    private SdkBytes attemptToGetKeyFromCacheThenBucket(String secretReference, String requestId){
-        if(cacheService.getItemFromCache(secretReference) != null){
-            byte[] encryptedKeyByteArray = (byte[]) cacheService.getItemFromCache(secretReference);
-            return SdkBytes.fromByteArray(encryptedKeyByteArray);
-        }
-        else{
-            try{
-                String s3ObjectOutput = (String) awsService.sendRetrieveBucketObjectResponse(awsS3KeyBucket, secretReference, requestId, true);
-                byte[] hexDecodedKey = Hex.decodeHex(s3ObjectOutput);
-                return SdkBytes.fromByteArray(hexDecodedKey);
+    private String getKeyIdFromCacheOrBucket(String secretReference, String requestId){
+        try{
+            String keyId;
+            if(cacheService.getItemFromCache(secretReference) != null){
+                keyId = (String) cacheService.getItemFromCache(secretReference);
+            }else{
+                keyId  = (String) awsService.sendRetrieveBucketObjectResponse(awsS3KeyBucket, secretReference, requestId, true);
             }
-            catch(DecoderException e){
-                log.error("Error decoding hex encrypted key for request id {}", requestId, e);
-                throw new SecretsChestException("Error decoding hex encrypted key for request id: " + requestId);
-            }
+            return keyId;
+        } catch (Exception e) {
+            log.error("Error decoding hex encrypted key for request id {}", requestId, e);
+            throw new SecretsChestException("Error decoding hex encrypted key for request id: " + requestId);
         }
     }
 }
