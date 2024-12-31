@@ -10,6 +10,10 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * @author Avery Grimes-Farrow
  * Created on: 6/13/20
@@ -28,11 +32,12 @@ public class AWSServiceImpl implements AWSService{
     }
 
     @Override
-    public void sendUploadBucketObjectRequest(String bucket, String bucketObjectReference, String dataToUpload, String requestId) {
+    public void sendUploadBucketObjectRequest(String bucket, String bucketObjectReference, String dataToUpload, ConcurrentHashMap<String, String> metadata, String requestId) {
         try{
             PutObjectRequest objectRequest = PutObjectRequest.builder()
                             .bucket(bucket)
                             .key(bucketObjectReference)
+                            .metadata(metadata)
                             .build();
             log.info("Uploading data to bucket {} for requestId {}", bucket, requestId);
             amazonS3Client.putObject(objectRequest, RequestBody.fromBytes(dataToUpload.getBytes()));

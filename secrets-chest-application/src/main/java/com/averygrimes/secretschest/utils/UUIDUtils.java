@@ -18,6 +18,6 @@ import java.util.UUID;
 public class UUIDUtils {
 
     public static String generateRandomId(){
-        return RandomStringUtils.random(24, true, true);
+        return RandomStringUtils.secureStrong().next(16, true, true);
     }
 }

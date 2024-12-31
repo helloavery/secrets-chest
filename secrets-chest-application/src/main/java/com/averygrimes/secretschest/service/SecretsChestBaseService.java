@@ -1,6 +1,8 @@
 package com.averygrimes.secretschest.service;
 
 
+import com.averygrimes.secretschest.model.SecretsChestData;
+import com.averygrimes.secretschest.model.SecretsChestRequest;
 import com.averygrimes.secretschest.model.SecretsChestResponse;
 
 /**
@@ -11,11 +13,9 @@ import com.averygrimes.secretschest.model.SecretsChestResponse;
 
 public interface SecretsChestBaseService {
 
-    SecretsChestResponse uploadAsset(byte[] dataToUpload, String requestId);
+    SecretsChestResponse uploadAsset(SecretsChestData secretsChestData);
 
-    SecretsChestResponse uploadPlainTextAsset(String dataToUpload, boolean isEncryptionDisabled, String requestId);
+    SecretsChestResponse updateAsset(String secretsReference, SecretsChestData secretsChestData);
 
-    SecretsChestResponse updateAsset(String secretsReference, byte[] dataToUpload, String requestId);
-
-    SecretsChestResponse retrieveAsset(String secretReference, boolean isEncryptionDisabled, String requestId);
+    SecretsChestResponse retrieveAsset(String groupId, String secretReference, String requestId);
 }

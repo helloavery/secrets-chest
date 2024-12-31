@@ -28,19 +28,17 @@ public class CryptoServiceImpl implements CryptoService {
     }
 
     @Override
-    public SecretsChestData generateDataKeyAndEncryptData(byte[] dataToUpload, String requestId){
-        SecretsChestData secretsChestData = new SecretsChestData();
+    public void generateDataKeyAndEncryptData(SecretsChestData secretsChestData){
         try{
-            CreateKeyResponse dataKeyResult = createDataKey(requestId);
+            CreateKeyResponse dataKeyResult = createDataKey(secretsChestData.getRequestId());
             String keyId = dataKeyResult.keyMetadata().keyId();
 
-            byte[] encryptedData = encryptData(keyId, SdkBytes.fromByteArray(dataToUpload));
+            byte[] encryptedData = encryptData(keyId, SdkBytes.fromByteArray(secretsChestData.getUnencryptedData()));
             String hexEncodedEncryptedData = Hex.encodeHexString(encryptedData);
 
             secretsChestData.setKeyId(keyId);
             secretsChestData.setEncryptedData(encryptedData);
             secretsChestData.setHexEncodedEncryptedData(hexEncodedEncryptedData);
-            return secretsChestData;
         }
         catch(Exception e){
             log.error("Error encrypting secrets to be uploaded", e);

@@ -11,7 +11,7 @@ import com.averygrimes.secretschest.model.SecretsChestData;
 
 public interface CryptoService {
 
-    SecretsChestData generateDataKeyAndEncryptData(byte[] dataToUpload, String requestId);
+    void generateDataKeyAndEncryptData(SecretsChestData secretsChestData);
 
     byte[] decryptData(String keyId, String hexEncodedEncryptedData);
 

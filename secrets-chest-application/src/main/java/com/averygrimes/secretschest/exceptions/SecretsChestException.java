@@ -2,6 +2,7 @@ package com.averygrimes.secretschest.exceptions;
 
 import lombok.Getter;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Getter
@@ -10,7 +11,7 @@ public class SecretsChestException extends RuntimeException {
     private int statusCode;
     private String message;
     private Exception exception;
-    private List<String> errors;
+    private List<String> errors = new ArrayList<>();
 
     public SecretsChestException(String message){
         super(message);
@@ -27,6 +28,11 @@ public class SecretsChestException extends RuntimeException {
     public SecretsChestException(int statusCode, Exception e){
         this.statusCode = statusCode;
         this.exception = e;
+    }
+
+    public SecretsChestException(int statusCode, List<String> errors){
+        this.statusCode = statusCode;
+        this.errors = errors;
     }
 
     public SecretsChestException(int statusCode, String message){

@@ -9,6 +9,11 @@ package com.averygrimes.secretschest.utils;
 public interface SecretsChestConstants {
 
     /** SecretsChestsBase Constants **/
+    String S3_KEY_NAMING_PATTERN = "%s_%s_%s";
+    String GROUP_METADATA = "Group ID";
+    String APP_METADATA = "Application ID";
+    String DESC_METADATA = "Secret Description";
+
     String PLAIN_TEXT_DATA = "plaintext";
     String ERROR_UPLOAD = "ERROR_UPLOADING_DATA";
     String AES_ENCRYPTION = "AES";
