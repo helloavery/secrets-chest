@@ -10,14 +10,11 @@ import com.averygrimes.secretschest.exceptions.SecretsChestCryptoException;
 import com.averygrimes.secretschest.model.SecretsChestData;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.binary.Hex;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.kms.KmsClient;
 import software.amazon.awssdk.services.kms.model.*;
-
-import java.security.Security;
 
 @Service
 @Slf4j
@@ -28,10 +25,6 @@ public class CryptoServiceImpl implements CryptoService {
     @Autowired
     public void setKmsClient(KmsClient kmsClient) {
         this.kmsClient = kmsClient;
-    }
-
-    public CryptoServiceImpl(){
-        Security.addProvider(new BouncyCastleProvider());
     }
 
     @Override
