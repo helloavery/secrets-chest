@@ -2,7 +2,6 @@ package com.averygrimes.secretschest.service;
 
 
 import com.averygrimes.secretschest.model.SecretsChestData;
-import com.averygrimes.secretschest.model.SecretsChestRequest;
 import com.averygrimes.secretschest.model.SecretsChestResponse;
 
 /**

@@ -39,11 +39,7 @@ public class RequestValidator {
         secretsChestData.setAppId(secretsChestRequest.getAppId());
         secretsChestData.setDataDescription(secretsChestRequest.getDataDescription());
         secretsChestData.setDataRequestType(secretsChestRequest.getDataRequestType());
-        String requestId = secretsChestRequest.getRequestId();
-        if(StringUtils.isBlank(requestId)){
-            requestId = UUIDUtils.generateRandomId();
-        }
-        secretsChestData.setRequestId(requestId);
+        secretsChestData.setRequestId(secretsChestRequest.getRequestId());
         return secretsChestData;
     }
 }

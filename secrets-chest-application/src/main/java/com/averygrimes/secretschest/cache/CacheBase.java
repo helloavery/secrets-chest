@@ -1,8 +1,10 @@
 package com.averygrimes.secretschest.cache;
 
+import java.util.Optional;
+
 public interface CacheBase {
 
-    Object getItemFromCache(String key);
+    Optional<Object> getItemFromCache(String key);
 
     void putItemInCache(String key, Object value);
 

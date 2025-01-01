@@ -12,12 +12,14 @@ import com.averygrimes.secretschest.external.AWSService;
 import com.averygrimes.secretschest.model.SecretsChestData;
 import com.averygrimes.secretschest.model.SecretsChestRequest;
 import com.averygrimes.secretschest.model.SecretsChestResponse;
+import com.averygrimes.secretschest.utils.RequestStatCollector;
 import com.averygrimes.secretschest.utils.UUIDUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StopWatch;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -36,6 +38,7 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
     private Executor executor;
     private final Lock lock = new ReentrantLock(true);
     private AWSService awsService;
+    private RequestStatCollector requestStatCollector;
 
     @Value("${aws.s3.keyBucket}")
     private String awsS3KeyBucket;
@@ -63,11 +66,18 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
         this.awsService = awsService;
     }
 
+    @Autowired
+    public void setRequestStatCollector(RequestStatCollector requestStatCollector) {
+        this.requestStatCollector = requestStatCollector;
+    }
 
     @Override
     public SecretsChestResponse uploadAsset(SecretsChestData secretsChestData){
-        SecretsChestResponse secretsChestResponse = new SecretsChestResponse();
         try {
+            StopWatch stopWatch = new StopWatch();
+            stopWatch.start();
+            log.info("SecretsChestBaseServiceImpl - uploadAsset: starting uploadAsset");
+            SecretsChestResponse secretsChestResponse = new SecretsChestResponse();
             String secretReference = String.format(S3_KEY_NAMING_PATTERN, secretsChestData.getGroupId(), secretsChestData.getAppId(), UUIDUtils.generateRandomId());
             secretsChestData.setSecretReference(secretReference);
             byte[] dataToUpload;
@@ -82,37 +92,55 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
             secretsChestResponse.setSecretReference(secretReference);
             secretsChestResponse.setStatusCode(200);
             secretsChestResponse.setSuccessful(isUploadSuccessful);
+            log.info("SecretsChestBaseServiceImpl - uploadAsset: completed uploadAsset");
+            requestStatCollector.recordSuccess(StackWalker.getInstance()
+                    .walk(s -> s.skip(1).findFirst())
+                    .get()
+                    .getMethodName(),secretsChestResponse, stopWatch);
+            return secretsChestResponse;
         } catch (Exception e) {
-            log.warn("Thread has been interrupted while acquiring lock");
+            log.error("Error while uploading asset", e);
+            throw new SecretsChestException(500, "Error while uploading asset", e);
         }
-        return secretsChestResponse;
     }
 
     @Override
     public SecretsChestResponse updateAsset(String secretsReference, SecretsChestData secretsChestData){
-        SecretsChestResponse secretsChestResponse = new SecretsChestResponse();
         try {
+            StopWatch stopWatch = new StopWatch();
+            stopWatch.start();
+            log.info("SecretsChestBaseServiceImpl - updateAsset: starting updateAsset");
+            SecretsChestResponse secretsChestResponse = new SecretsChestResponse();
             String keyId = getKeyIdFromCacheOrBucket(secretsReference, secretsChestData.getRequestId());
             SecretsChestData encryptedKeyAndData = cryptoService.encryptDataWithoutGeneratingDataKey(keyId, secretsChestData.getUnencryptedData());
             awsService.sendUploadBucketObjectRequest(awsS3DataBucket, secretsReference, encryptedKeyAndData.getHexEncodedEncryptedData(), populateBucketMetadata(secretsChestData), secretsChestData.getRequestId());
             secretsChestResponse.setSecretReference(secretsReference);
             secretsChestResponse.setStatusCode(200);
             secretsChestResponse.setSuccessful(true);
+            log.info("SecretsChestBaseServiceImpl - updateAsset: completed updateAsset");
+            requestStatCollector.recordSuccess(StackWalker.getInstance()
+                    .walk(s -> s.skip(1).findFirst())
+                    .get()
+                    .getMethodName(),secretsChestResponse, stopWatch);
+            return secretsChestResponse;
         }
         catch (Exception e) {
             log.error("Error updating secrets for bucket {} for requestId {}", "dataToUpload", secretsChestData.getRequestId(), e);
-            throw new SecretsChestException("Error updating secrets data for request id: " + secretsChestData.getRequestId());
+            throw new SecretsChestException(500, "Error updating secrets data for request id: " + secretsChestData.getRequestId(), e);
         }
-        return secretsChestResponse;
     }
 
     @Override
     public SecretsChestResponse retrieveAsset(String groupId, String secretReference, String requestId){
         SecretsChestResponse secretsChestResponse = new SecretsChestResponse();
+        StopWatch stopWatch = new StopWatch();
+        stopWatch.start();
         try {
+            log.info("SecretsChestBaseServiceImpl - retrieveAsset: starting retrieveAsset");
             if(lock.tryLock(3500, TimeUnit.MILLISECONDS)){
                 try{
                     String bucketObjectReference = groupId + "/" + secretReference;
+                    log.info("BucketObject to fetch object for groupId={}, secretReference={} is {}", groupId, secretReference, bucketObjectReference);
                     String s3ObjectOutput = (String) awsService.sendRetrieveBucketObjectResponse(awsS3DataBucket, bucketObjectReference, requestId, true);
                     String keyId = getKeyIdFromCacheOrBucket(bucketObjectReference, requestId);
                     byte[] decryptedData = cryptoService.decryptData(keyId, s3ObjectOutput);
@@ -129,8 +157,14 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
                 }
             }
         } catch(InterruptedException e) {
-            log.warn("Thread has been interrupted while acquiring lock");
+            log.error("Thread has been interrupted while acquiring lock", e);
+            throw new SecretsChestException(500, "Error fetching secrets for secret" + secretReference + " requestId: " + requestId);
         }
+        log.info("SecretsChestBaseServiceImpl - retrieveAsset: completed retrieveAsset");
+        requestStatCollector.recordSuccess(StackWalker.getInstance()
+                .walk(s -> s.skip(1).findFirst())
+                .get()
+                .getMethodName(),secretsChestResponse, stopWatch);
         return secretsChestResponse;
     }
 
@@ -143,7 +177,10 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
                     List<CompletableFuture<SecretsChestResponse>> completableFutures = new ArrayList<>();
                     sendBucketUploadTask(completableFutures, awsS3DataBucket, secretsChestData.getHexEncodedEncryptedData(), secretsChestData);
                     sendBucketUploadTask(completableFutures, awsS3KeyBucket, secretsChestData.getKeyId(), secretsChestData);
-                    String bucketObjectReference = secretsChestData.getGroupId() + "/" + secretsChestData.getBucketObjectReference();
+                    String groupId = secretsChestData.getGroupId();
+                    String secretReference = secretsChestData.getBucketObjectReference();
+                    String bucketObjectReference = groupId+ "/" + secretReference;
+                    log.info("Generated bucketObjectReference to upload data for groupId={}, secretReference={} is {}", groupId, secretReference, bucketObjectReference);
                     putItemInCache(bucketObjectReference, secretsChestData.getKeyId());
                     CompletableFuture.allOf(completableFutures.toArray(new CompletableFuture[0])).join();
                     for(CompletableFuture<SecretsChestResponse> result : completableFutures){
@@ -159,7 +196,8 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
                 }
             }
         } catch (InterruptedException e) {
-            log.warn("Thread has been interrupted while acquiring lock");
+            log.error("Thread has been interrupted while acquiring lock", e);
+            throw new SecretsChestException(500, "Error fetching secrets for secret" + secretsChestData.getSecretReference() + " requestId: " + secretsChestData.getRequestId());
         }
         return isOperationSuccessful;
     }
@@ -197,13 +235,8 @@ public class SecretsChestBaseServiceImpl implements SecretsChestBaseService {
 
     private String getKeyIdFromCacheOrBucket(String secretReference, String requestId){
         try{
-            String keyId;
-            if(cacheService.getItemFromCache(secretReference) != null){
-                keyId = (String) cacheService.getItemFromCache(secretReference);
-            }else{
-                keyId  = (String) awsService.sendRetrieveBucketObjectResponse(awsS3KeyBucket, secretReference, requestId, true);
-            }
-            return keyId;
+            Optional<Object> keyIdOptionalFromCache = cacheService.getItemFromCache(secretReference);
+            return keyIdOptionalFromCache.map(keyIdOptional -> (String) keyIdOptional).orElseGet(() -> (String) awsService.sendRetrieveBucketObjectResponse(awsS3KeyBucket, secretReference, requestId, true));
         } catch (Exception e) {
             log.error("Error decoding hex encrypted key for request id {}", requestId, e);
             throw new SecretsChestException("Error decoding hex encrypted key for request id: " + requestId);

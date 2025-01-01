@@ -1,6 +1,5 @@
 package com.averygrimes.secretschest.cache;
 
-import com.averygrimes.secretschest.exceptions.CacheException;
 import com.hazelcast.config.EvictionConfig;
 import com.hazelcast.config.EvictionPolicy;
 import com.hazelcast.config.MapConfig;
@@ -8,13 +7,16 @@ import com.hazelcast.config.MaxSizePolicy;
 import com.hazelcast.core.DistributedObject;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.IMap;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.Serializable;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 @Service
+@Slf4j
 public class AbstractCache implements CacheBase {
 
     protected Cluster cluster;
@@ -29,18 +31,19 @@ public class AbstractCache implements CacheBase {
     }
 
     @Override
-    public Object getItemFromCache(String key) {
+    public Optional<Object> getItemFromCache(String key) {
         initCacheInstanceIfNull();
         if(key == null){
-            throw new CacheException("");
+            log.info("Null key was passed to getItemFromCache, returning empty optional");
+            return Optional.empty();
         }
         if(cacheMap.containsKey(key)){
             CacheObject cacheObject = cacheMap.get(key);
             if(cacheObject != null){
-                return cacheObject.getValueObject();
+                return Optional.of(cacheObject.getValueObject());
             }
         }
-        return null;
+        return Optional.empty();
     }
 
     @Override
