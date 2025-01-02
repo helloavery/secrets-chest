@@ -11,7 +11,7 @@ import java.util.Map;
  * https://github.com/helloavery
  */
 
-public class SecretsChestUtils {
+public final class SecretsChestUtils {
 
     private final SecretsChestService secretsChestService;
 

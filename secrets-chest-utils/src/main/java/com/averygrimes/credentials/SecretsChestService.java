@@ -11,7 +11,7 @@ import java.util.Map;
  * https://github.com/helloavery
  */
 
-public interface SecretsChestService {
+interface SecretsChestService {
 
     CredentialsResponse sendSecrets(byte[] dataToUpload);
 

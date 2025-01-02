@@ -1,7 +1,8 @@
 package com.averygrimes.secretschest.service;
 
 
-import com.averygrimes.secretschest.pojo.SecretsChestResponse;
+import com.averygrimes.secretschest.model.SecretsChestData;
+import com.averygrimes.secretschest.model.SecretsChestResponse;
 
 /**
  * @author Avery Grimes-Farrow
@@ -11,11 +12,9 @@ import com.averygrimes.secretschest.pojo.SecretsChestResponse;
 
 public interface SecretsChestBaseService {
 
-    SecretsChestResponse uploadAsset(byte[] dataToUpload, String requestId);
+    SecretsChestResponse uploadAsset(SecretsChestData secretsChestData);
 
-    SecretsChestResponse uploadPlainTextAsset(String dataToUpload, String requestId);
+    SecretsChestResponse updateAsset(String secretsReference, SecretsChestData secretsChestData);
 
-    SecretsChestResponse updateAsset(String secretsReference, byte[] dataToUpload, String requestId);
-
-    SecretsChestResponse retrieveAsset(String secretReference, String requestId);
+    SecretsChestResponse retrieveAsset(String groupId, String secretReference, String requestId);
 }

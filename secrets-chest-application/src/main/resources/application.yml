@@ -1,10 +1,18 @@
 logging:
   level:
     com.averygrimes.secretschest: INFO
-  file.path: logs/secrets-chest-log
+  file.name.path: logs/secrets-chest-log
 
 server:
   error:
     include-stacktrace: always
 
 server.servlet.context-path: /secrets-chest-service
+server.port: 6570
+
+aws:
+  s3:
+    keyBucket: averysecretschestkeys
+    dataBucket: averysecretschestdata
+  kms:
+    keyArn: arn:aws:iam::004586521341:user/averykmsuser

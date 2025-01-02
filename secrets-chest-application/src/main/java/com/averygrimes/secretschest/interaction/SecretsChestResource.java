@@ -1,22 +1,24 @@
 package com.averygrimes.secretschest.interaction;
 
-import com.averygrimes.secretschest.pojo.SecretsChestConstants;
-import com.averygrimes.secretschest.pojo.SecretsChestResponse;
+import com.averygrimes.secretschest.exceptions.SecretsChestException;
+import com.averygrimes.secretschest.model.SecretsChestData;
+import com.averygrimes.secretschest.model.SecretsChestRequest;
+import com.averygrimes.secretschest.model.SecretsChestResponse;
 import com.averygrimes.secretschest.service.SecretsChestBaseService;
+import com.averygrimes.secretschest.utils.RequestStatCollector;
+import com.averygrimes.secretschest.utils.RequestValidator;
 import com.averygrimes.secretschest.utils.ResponseBuilder;
 import com.averygrimes.secretschest.utils.UUIDUtils;
-import org.apache.commons.lang3.StringUtils;
+import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.StopWatch;
+import org.springframework.web.bind.annotation.*;
+
+import static com.averygrimes.secretschest.utils.SecretsChestConstants.ERROR_LOG_FORMAT;
 
 /**
  * @author Avery Grimes-Farrow
@@ -24,59 +26,131 @@ import javax.ws.rs.core.Response;
  * https://github.com/helloavery
  */
 
-@Named
-@Path("/secretsChestBase")
+@RestController
+@RequestMapping("/secretsChestBase")
+@Slf4j
 public class SecretsChestResource {
 
+    private RequestValidator requestValidator;
     private SecretsChestBaseService chestBaseService;
+    private RequestStatCollector requestStatCollector;
 
-    @Inject
+    @Autowired
+    public void setRequestValidator(RequestValidator requestValidator) {
+        this.requestValidator = requestValidator;
+    }
+
+    @Autowired
     public void setChestBaseService(SecretsChestBaseService chestBaseService) {
         this.chestBaseService = chestBaseService;
     }
 
-    @POST
-    @Path("/uploadSecrets")
-    @Consumes(MediaType.APPLICATION_OCTET_STREAM)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response uploadSecrets(byte[] dataToUpload){
-        String requestId = UUIDUtils.generateRandomId();
-        SecretsChestResponse secretsChestResponse = chestBaseService.uploadAsset(dataToUpload, requestId);
-        return ResponseBuilder.createSuccessfulUploadDataResponse(secretsChestResponse);
+    @Autowired
+    public void setRequestStatCollector(RequestStatCollector requestStatCollector) {
+        this.requestStatCollector = requestStatCollector;
     }
 
-    @POST
-    @Path("/uploadSecrets/format/{format}")
-    @Consumes(MediaType.TEXT_PLAIN)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response uploadSecrets(@PathParam("format") String format, String dataToUpload){
-        String requestId = UUIDUtils.generateRandomId();
-        SecretsChestResponse secretsChestResponse = null;
-        if(StringUtils.equalsIgnoreCase(format, SecretsChestConstants.PLAIN_TEXT_DATA)){
-            secretsChestResponse =  chestBaseService.uploadPlainTextAsset(dataToUpload, requestId);
-        }else{
-            secretsChestResponse = chestBaseService.uploadAsset(dataToUpload.getBytes(), requestId);
+    @RequestMapping(
+            method = RequestMethod.POST,
+            value = "/uploadSecrets",
+            consumes = {MediaType.APPLICATION_JSON_VALUE},
+            produces = {MediaType.APPLICATION_JSON_VALUE})
+    public ResponseEntity<Object> uploadSecrets(@RequestBody @Valid SecretsChestRequest secretsChestRequest){
+        StopWatch stopWatch = new StopWatch();
+        stopWatch.start();
+        try{
+            log.info("SecretsChestResource - uploadSecrets: retrieved request to start secret upload");
+            SecretsChestData secretsChestData = requestValidator.validateAndTransformIncomingRequest(secretsChestRequest);
+            SecretsChestResponse secretsChestResponse = chestBaseService.uploadAsset(secretsChestData);
+            requestStatCollector.recordSuccess(StackWalker.getInstance()
+                    .walk(s -> s.skip(1).findFirst())
+                    .get()
+                    .getMethodName(), secretsChestResponse, stopWatch);
+            return ResponseBuilder.buildAndReturnResponse(secretsChestResponse);
+        } catch (SecretsChestException e) {
+            log.error(ERROR_LOG_FORMAT, e.getStatusCode(), e.getMessage(), e.getErrors());
+            requestStatCollector.recordError(StackWalker.getInstance()
+                    .walk(s -> s.skip(1).findFirst())
+                    .get()
+                    .getMethodName(),e, stopWatch);
+            throw e;
+        } catch (Exception e) {
+            log.error("Exception occurred while uploading secrets {}", e.getMessage(), e);
+            SecretsChestException secretsChestException = new SecretsChestException(500, "Exception occurred while uploading secrets", e);
+            requestStatCollector.recordError(StackWalker.getInstance()
+                    .walk(s -> s.skip(1).findFirst())
+                    .get()
+                    .getMethodName(),secretsChestException, stopWatch);
+            throw secretsChestException;
         }
-        return ResponseBuilder.createSuccessfulUploadDataResponse(secretsChestResponse);
     }
 
-    @PUT
-    @Path("/updateSecrets/{secretsReference}")
-    @Consumes(MediaType.APPLICATION_OCTET_STREAM)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response updateSecrets(@PathParam("secretsReference") String secretsReference, byte[] data){
-        String requestId = UUIDUtils.generateRandomId();
-        SecretsChestResponse secretsChestResponse = chestBaseService.updateAsset(secretsReference, data, requestId);
-        return ResponseBuilder.createSuccessfulUploadDataResponse(secretsChestResponse);
+    @RequestMapping(
+            method = RequestMethod.PUT,
+            value = "/updateSecrets/{secretsReference}",
+            consumes = {MediaType.APPLICATION_JSON_VALUE},
+            produces = {MediaType.APPLICATION_JSON_VALUE})
+    public ResponseEntity<Object> updateSecrets(@PathVariable("secretsReference") String secretsReference, @RequestBody @Valid SecretsChestRequest secretsChestRequest){
+        StopWatch stopWatch = new StopWatch();
+        stopWatch.start();
+        try{
+            log.info("SecretsChestResource - updateSecrets: retrieved request to start secret update");
+            SecretsChestData secretsChestData = requestValidator.validateAndTransformIncomingRequest(secretsChestRequest);
+            SecretsChestResponse secretsChestResponse = chestBaseService.updateAsset(secretsReference, secretsChestData);
+            requestStatCollector.recordSuccess(StackWalker.getInstance()
+                    .walk(s -> s.skip(1).findFirst())
+                    .get()
+                    .getMethodName(),secretsChestResponse, stopWatch);
+            return ResponseBuilder.buildAndReturnResponse(secretsChestResponse);
+        } catch (SecretsChestException e) {
+            log.error(ERROR_LOG_FORMAT, e.getStatusCode(), e.getMessage(), e.getErrors());
+            requestStatCollector.recordError(StackWalker.getInstance()
+                    .walk(s -> s.skip(1).findFirst())
+                    .get()
+                    .getMethodName(),e, stopWatch);
+            throw e;
+        } catch (Exception e) {
+            log.error("Exception occurred while updating secrets {}", e.getMessage(), e);
+            SecretsChestException secretsChestException = new SecretsChestException(500, "Exception occurred while updating secrets", e);
+            requestStatCollector.recordError(StackWalker.getInstance()
+                    .walk(s -> s.skip(1).findFirst())
+                    .get()
+                    .getMethodName(),secretsChestException, stopWatch);
+            throw secretsChestException;
+        }
     }
 
-    @POST
-    @Path("/retrieveSecrets/{secretsReference}")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response retrieveSecrets(@PathParam("secretsReference") String secretReference){
-        String requestId = UUIDUtils.generateRandomId();
-        SecretsChestResponse secretsChestResponse = chestBaseService.retrieveAsset(secretReference, requestId);
-        return ResponseBuilder.createSuccessfulRetrieveDataResponse(secretsChestResponse);
+    @RequestMapping(
+            method = RequestMethod.GET,
+            value = "/retrieveSecrets/groupId/{groupId}/secretsReference/{secretsReference}",
+            produces = {MediaType.APPLICATION_JSON_VALUE})
+    public ResponseEntity<Object> retrieveSecrets(@PathVariable("groupId") String groupId, @PathVariable("secretsReference") String secretReference) {
+        StopWatch stopWatch = new StopWatch();
+        stopWatch.start();
+        try{
+            log.info("SecretsChestResource - retrieveSecrets: retrieved request to start secret retrieval");
+            String requestId = UUIDUtils.generateRandomId();
+            SecretsChestResponse secretsChestResponse = chestBaseService.retrieveAsset(groupId, secretReference, requestId);
+            requestStatCollector.recordSuccess(StackWalker.getInstance()
+                    .walk(s -> s.skip(1).findFirst())
+                    .get()
+                    .getMethodName(),secretsChestResponse, stopWatch);
+            return ResponseBuilder.buildAndReturnResponse(secretsChestResponse);
+        } catch (SecretsChestException e) {
+            log.error(ERROR_LOG_FORMAT, e.getStatusCode(), e.getMessage(), e.getErrors());
+            requestStatCollector.recordError(StackWalker.getInstance()
+                    .walk(s -> s.skip(1).findFirst())
+                    .get()
+                    .getMethodName(),e, stopWatch);
+            throw e;
+        } catch (Exception e) {
+            log.error("Exception occurred while retrieving secrets {}", e.getMessage(), e);
+            SecretsChestException secretsChestException = new SecretsChestException(500, "Exception occurred while retrieving secrets", e);
+            requestStatCollector.recordError(StackWalker.getInstance()
+                    .walk(s -> s.skip(1).findFirst())
+                    .get()
+                    .getMethodName(),secretsChestException, stopWatch);
+            throw secretsChestException;
+        }
     }
 }

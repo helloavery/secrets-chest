@@ -1,8 +1,9 @@
 package com.averygrimes.secretschest.utils;
 
-import com.averygrimes.secretschest.pojo.SecretsChestResponse;
+import com.averygrimes.secretschest.model.SecretsChestResponse;
 
-import javax.ws.rs.core.Response;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
 /**
  * @author Avery Grimes-Farrow
@@ -12,13 +13,8 @@ import javax.ws.rs.core.Response;
 
 public class ResponseBuilder {
 
-    public static Response createSuccessfulUploadDataResponse(SecretsChestResponse secretsChestResponse){
+    public static ResponseEntity<Object> buildAndReturnResponse(SecretsChestResponse secretsChestResponse){
         secretsChestResponse.setSuccessful(true);
-        return Response.ok(secretsChestResponse).build();
-    }
-
-    public static Response createSuccessfulRetrieveDataResponse(SecretsChestResponse secretsChestResponse){
-        secretsChestResponse.setSuccessful(true);
-        return Response.ok(secretsChestResponse).build();
+        return new ResponseEntity<>(secretsChestResponse, HttpStatus.OK);
     }
 }

@@ -1,9 +1,6 @@
 package com.averygrimes.secretschest.service;
 
-import software.amazon.awssdk.core.SdkBytes;
-
-import java.nio.ByteBuffer;
-import java.util.Map;
+import com.averygrimes.secretschest.model.SecretsChestData;
 
 /**
  * @author Avery Grimes-Farrow
@@ -14,10 +11,9 @@ import java.util.Map;
 
 public interface CryptoService {
 
-    Map<String, byte[]> generateDataKeyAndEncryptData(byte[] dataToUpload);
+    void generateDataKeyAndEncryptData(SecretsChestData secretsChestData);
 
-    byte[] decryptData(byte[] encryptedData, ByteBuffer encryptedKey);
+    byte[] decryptData(String keyId, String hexEncodedEncryptedData);
 
-    byte[] encryptDataWithoutGeneratingDataKey(byte[] dataToUpload, SdkBytes encryptedKey);
-
+    SecretsChestData encryptDataWithoutGeneratingDataKey(String keyId, byte[] dataToUpload);
 }
