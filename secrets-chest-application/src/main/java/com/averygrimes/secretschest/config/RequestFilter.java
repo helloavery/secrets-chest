@@ -31,7 +31,7 @@ public class RequestFilter implements Filter {
             filterChain.doFilter(servletRequest, servletResponse);
         } finally {
             // Clean up the MDC after the request is processed
-            MDC.remove("requestId");
+            MDC.clear();
         }
     }
 
